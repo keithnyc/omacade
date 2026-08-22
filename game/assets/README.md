@@ -39,3 +39,7 @@ The WAV files under `sfx/` are original synthesized effects generated locally
 for Omacade with FFmpeg's signal and noise sources. They contain no sampled
 music, voices, or third-party recordings. The set includes engine, rotation,
 launch, touchdown, stage-clear, crash, and comet cues.
+
+Rootbound has its own `rootbound-*.wav` set covering digging, package recovery,
+purging, damage, stage clear, bonus completion, mounting, and firewall denial.
+These are also original FFmpeg-synthesized waveforms with no sampled material.

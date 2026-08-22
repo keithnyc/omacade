@@ -143,8 +143,10 @@ omarchy plugin remove io.github.keithnyc.omacade
 Cabinet 02, Rootbound, now combines its quarantine/compress/purge combat with an
 original pixel-art sprite atlas and four increasingly hostile filesystem zones:
 `/home`, `/var`, `/tmp`, and `/root`. Each zone changes tunnel topology, terrain
-treatment, digging resistance, and daemon composition. Next work is original
-sound design, environmental hazards, and additional daemon behaviors.
+treatment, digging resistance, daemon composition, hazards, and optional bonus
+goals. Moving log blocks, rebuilding cache cells, timed firewall gates, animated
+stage transitions, and a dedicated synthesized sound set complete the current
+gameplay pass. Next work is additional daemon behaviors and cabinet-wide polish.
 
 ## License
 

@@ -286,6 +286,12 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("nextCapture >= 3", rootbound)
         self.assertIn("function tickCombatEffects(dt)", rootbound)
         self.assertIn("function addPurgeBurst(", rootbound)
+        self.assertIn("function setupHazards(generated)", rootbound)
+        self.assertIn("function tickUnstableTerrain(dt)", rootbound)
+        self.assertIn("function beginDeath(reason)", rootbound)
+        self.assertIn("function beginStageClear()", rootbound)
+        self.assertIn('type: zoneIndex === 1 ? "log" : "firewall"', rootbound)
+        self.assertIn('readonly property string objectiveText:', rootbound)
         self.assertIn('cabinetId: shell.cabinet.scoreKey', rootbound)
         self.assertIn("property int moveInterval: 145", rootbound)
         self.assertIn("moveInterval = digging ? digIntervals[zoneIndex] : 145", rootbound)
@@ -306,6 +312,11 @@ class OmacadeTests(unittest.TestCase):
         self.assertEqual(sprite[:8], b"\x89PNG\r\n\x1a\n")
         self.assertEqual(int.from_bytes(sprite[16:20], "big"), 1254)
         self.assertEqual(int.from_bytes(sprite[20:24], "big"), 1254)
+
+        for effect in ("dig", "package", "purge", "hit", "clear", "bonus", "mount", "hazard"):
+            wav = (ROOT / "game" / "assets" / "sfx" / f"rootbound-{effect}.wav").read_bytes()
+            self.assertEqual(wav[:4], b"RIFF")
+            self.assertEqual(wav[8:12], b"WAVE")
 
     def test_flight_renderer_stays_inside_terminal_width(self) -> None:
         Settings = self.module["Settings"]

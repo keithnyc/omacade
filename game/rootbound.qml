@@ -11,10 +11,14 @@ ShellRoot {
   ArcadeTheme { id: theme }
   ArcadeData { id: arcadeData; cabinetId: shell.cabinet.scoreKey }
 
-  SoundEffect { id: moveSound; source: Qt.resolvedUrl("assets/sfx/rotate.wav"); volume: 0.24 }
-  SoundEffect { id: purgeSound; source: Qt.resolvedUrl("assets/sfx/start.wav"); volume: 0.36 }
-  SoundEffect { id: hitSound; source: Qt.resolvedUrl("assets/sfx/crash.wav"); volume: 0.46 }
-  SoundEffect { id: clearSound; source: Qt.resolvedUrl("assets/sfx/stage-clear.wav"); volume: 0.48 }
+  SoundEffect { id: digSound; source: Qt.resolvedUrl("assets/sfx/rootbound-dig.wav"); volume: 0.18 }
+  SoundEffect { id: packageSound; source: Qt.resolvedUrl("assets/sfx/rootbound-package.wav"); volume: 0.34 }
+  SoundEffect { id: purgeSound; source: Qt.resolvedUrl("assets/sfx/rootbound-purge.wav"); volume: 0.30 }
+  SoundEffect { id: hitSound; source: Qt.resolvedUrl("assets/sfx/rootbound-hit.wav"); volume: 0.46 }
+  SoundEffect { id: clearSound; source: Qt.resolvedUrl("assets/sfx/rootbound-clear.wav"); volume: 0.42 }
+  SoundEffect { id: bonusSound; source: Qt.resolvedUrl("assets/sfx/rootbound-bonus.wav"); volume: 0.42 }
+  SoundEffect { id: mountSound; source: Qt.resolvedUrl("assets/sfx/rootbound-mount.wav"); volume: 0.32 }
+  SoundEffect { id: hazardSound; source: Qt.resolvedUrl("assets/sfx/rootbound-hazard.wav"); volume: 0.22 }
 
   function play(effect) {
     if (!arcadeData.soundEnabled) return
@@ -49,6 +53,8 @@ ShellRoot {
       property var soil: []
       property var enemies: []
       property var shards: []
+      property var hazards: []
+      property var unstableCells: []
       property int playerX: 16
       property int playerY: 1
       property real playerVisualX: 16
@@ -59,6 +65,16 @@ ShellRoot {
       property int stage: 1
       property int lives: 3
       property int packages: 0
+      property int stagePackages: 0
+      property int stagePurged: 0
+      property int stageStartLives: 3
+      property int objectiveTarget: 0
+      property bool objectiveMet: false
+      property int objectiveAward: 0
+      property real stageElapsed: 0
+      property real deathLife: 0
+      property real stageClearLife: 0
+      property real stageIntroLife: 0
       property string mode: "attract"
       property string modeBeforeScores: "attract"
       property bool leftHeld: false
@@ -85,6 +101,10 @@ ShellRoot {
       readonly property bool tooSmall: playfield.width < 640 || playfield.height < 390
       readonly property real cellWidth: playfield.width / columns
       readonly property real cellHeight: playfield.height / rows
+      readonly property string objectiveText: zoneIndex === 0 ? "RECOVER ALL " + objectiveTarget + " PACKAGES"
+                                             : zoneIndex === 1 ? "RECOVER " + objectiveTarget + " PACKAGES"
+                                             : zoneIndex === 2 ? "PURGE WITHIN 45 SECONDS"
+                                             : "CLEAR WITHOUT A SEGFAULT"
 
       Component.onCompleted: {
         worldCanvas.loadImage(spriteAtlas)
@@ -139,7 +159,7 @@ ShellRoot {
         return true
       }
 
-      function generateLevel() {
+      function generateLevel(resetStageState) {
         var generated = []
         for (var i = 0; i < columns * rows; i++) generated.push(true)
 
@@ -202,6 +222,15 @@ ShellRoot {
         pendingMoveUntil = 0
         purgeHeld = false
 
+        if (resetStageState !== false) {
+          stagePackages = 0
+          stagePurged = 0
+          stageStartLives = lives
+          stageElapsed = 0
+          objectiveMet = false
+          objectiveAward = 0
+        }
+
         var candidates = openCells(generated)
         var spawned = []
         var enemyCount = Math.min(2 + stage, 7)
@@ -226,6 +255,9 @@ ShellRoot {
           if (!duplicate && generated[index(shardX, shardY)]) hidden.push({ x: shardX, y: shardY })
         }
         shards = hidden
+        if (resetStageState !== false)
+          objectiveTarget = zoneIndex === 0 ? shardCount : zoneIndex === 1 ? Math.min(3, shardCount) : 0
+        setupHazards(generated)
         pulsePath = []
         pulseLife = 0
         scoreBursts = []
@@ -234,14 +266,106 @@ ShellRoot {
         worldCanvas.requestPaint()
       }
 
+      function objectiveProgress() {
+        if (zoneIndex <= 1) return Math.min(stagePackages, objectiveTarget) + "/" + objectiveTarget
+        if (zoneIndex === 2) return Math.floor(stageElapsed) + "S / 45S"
+        return lives === stageStartLives ? "CLEAN" : "FAILED"
+      }
+
+      function cellOccupied(x, y) {
+        if (playerX === x && playerY === y) return true
+        for (var enemy = 0; enemy < enemies.length; enemy++)
+          if (enemies[enemy].x === x && enemies[enemy].y === y) return true
+        for (var shard = 0; shard < shards.length; shard++)
+          if (shards[shard].x === x && shards[shard].y === y) return true
+        return false
+      }
+
+      function setupHazards(generated) {
+        var spawned = []
+        var candidates = openCells(generated)
+        var count = zoneIndex === 1 ? Math.min(2 + Math.floor(stage / 3), 4)
+                  : zoneIndex === 3 ? Math.min(3 + Math.floor(stage / 2), 6) : 0
+        while (spawned.length < count && candidates.length) {
+          var choice = candidates.splice(Math.floor(Math.random() * candidates.length), 1)[0]
+          if (Math.abs(choice.x - playerX) + Math.abs(choice.y - playerY) < 8 || cellOccupied(choice.x, choice.y)) continue
+          spawned.push({ type: zoneIndex === 1 ? "log" : "firewall",
+                         x: choice.x, y: choice.y,
+                         dir: Math.random() < 0.5 ? -1 : 1,
+                         phase: Math.random() * Math.PI * 2 })
+        }
+        hazards = spawned
+        unstableCells = []
+      }
+
+      function firewallActive(hazard) {
+        return Math.sin(animationTime * 3.2 + hazard.phase) > -0.12
+      }
+
+      function hazardBlocks(x, y) {
+        for (var i = 0; i < hazards.length; i++) {
+          var hazard = hazards[i]
+          if (hazard.x !== x || hazard.y !== y) continue
+          if (hazard.type === "firewall" && firewallActive(hazard)) return true
+        }
+        return false
+      }
+
+      function moveZoneHazards() {
+        if (mode !== "playing" || zoneIndex !== 1) return
+        var moved = []
+        for (var i = 0; i < hazards.length; i++) {
+          var hazard = hazards[i]
+          var nextX = hazard.x + hazard.dir
+          var nextDir = hazard.dir
+          if (!inside(nextX, hazard.y) || isSoil(nextX, hazard.y)) {
+            nextDir *= -1
+            nextX = hazard.x + nextDir
+          }
+          if (!inside(nextX, hazard.y) || isSoil(nextX, hazard.y)) nextX = hazard.x
+          moved.push({ type: hazard.type, x: nextX, y: hazard.y, dir: nextDir, phase: hazard.phase })
+        }
+        hazards = moved
+        checkHazardCollision()
+        worldCanvas.requestPaint()
+      }
+
+      function checkHazardCollision() {
+        if (mode !== "playing") return
+        for (var i = 0; i < hazards.length; i++) {
+          if (hazards[i].type === "log" && hazards[i].x === playerX && hazards[i].y === playerY) {
+            beginDeath("LOG ROTATION // PROCESS CRUSHED")
+            return
+          }
+        }
+      }
+
+      function tickUnstableTerrain(dt) {
+        if (zoneIndex !== 2 || mode !== "playing") return
+        var pending = []
+        for (var i = 0; i < unstableCells.length; i++) {
+          var cell = unstableCells[i]
+          var life = cell.life - dt
+          if (life <= 0) {
+            if (cellOccupied(cell.x, cell.y)) pending.push({ x: cell.x, y: cell.y, life: 0.55 })
+            else {
+              setSoil(cell.x, cell.y, true)
+              statusMessage = "/TMP CACHE REBUILT BEHIND YOU"
+            }
+          } else pending.push({ x: cell.x, y: cell.y, life: life })
+        }
+        unstableCells = pending
+      }
+
       function startRun() {
         score = 0
         stage = 1
         lives = 3
         packages = 0
-        mode = "playing"
-        generateLevel()
-        shell.play(purgeSound)
+        generateLevel(true)
+        mode = "stageintro"
+        stageIntroLife = 1.0
+        shell.play(mountSound)
       }
 
       function movePlayer(dx, dy) {
@@ -249,6 +373,13 @@ ShellRoot {
         var nextX = playerX + dx
         var nextY = playerY + dy
         if (!inside(nextX, nextY) || nextY === 0) return false
+        if (hazardBlocks(nextX, nextY)) {
+          facingX = dx
+          facingY = dy
+          statusMessage = "FIREWALL ACTIVE // ACCESS DENIED"
+          shell.play(hazardSound)
+          return false
+        }
         facingX = dx
         facingY = dy
         var digging = isSoil(nextX, nextY)
@@ -257,6 +388,12 @@ ShellRoot {
         if (digging) {
           setSoil(nextX, nextY, false)
           score += 10 + stage
+          shell.play(digSound)
+          if (zoneIndex === 2) {
+            var unstable = unstableCells.slice(0)
+            unstable.push({ x: nextX, y: nextY, life: 3.2 })
+            unstableCells = unstable
+          }
         }
         playerX = nextX
         playerY = nextY
@@ -265,12 +402,14 @@ ShellRoot {
         for (var i = 0; i < shards.length; i++) {
           if (shards[i].x === playerX && shards[i].y === playerY) {
             packages += 1
+            stagePackages += 1
             score += 180 + stage * 20
-            shell.play(moveSound)
+            shell.play(packageSound)
           } else remaining.push(shards[i])
         }
         shards = remaining
         checkCollision()
+        checkHazardCollision()
         worldCanvas.requestPaint()
         return true
       }
@@ -364,11 +503,10 @@ ShellRoot {
         }
         enemies = survivors
         if (purged) {
+          stagePurged += purged
           statusMessage = "SUDO PURGED " + purged + " DAEMON" + (purged > 1 ? "S" : "")
           if (!enemies.length) {
-            mode = "stageclear"
-            score += stage * 500
-            shell.play(clearSound)
+            beginStageClear()
           }
         } else if (tagged) {
           statusMessage = "DAEMON " + (survivors.some(function(enemy) { return enemy.capture === 2 })
@@ -434,14 +572,45 @@ ShellRoot {
         if (mode !== "playing") return
         for (var i = 0; i < enemies.length; i++) {
           if (enemies[i].capture === 0 && enemies[i].x === playerX && enemies[i].y === playerY) {
-            lives -= 1
-            shell.play(hitSound)
-            statusMessage = "SEGFAULT // LIFE LOST"
-            if (lives <= 0) finishRun()
-            else generateLevel()
+            beginDeath("SEGFAULT // ROGUE DAEMON")
             return
           }
         }
+      }
+
+      function beginDeath(reason) {
+        if (mode !== "playing") return
+        lives -= 1
+        mode = "dying"
+        deathLife = 0.95
+        leftHeld = rightHeld = upHeld = downHeld = purgeHeld = false
+        pendingMoveX = pendingMoveY = 0
+        statusMessage = reason
+        addPurgeBurst(playerX, playerY, "zombie")
+        shell.play(hitSound)
+      }
+
+      function resolveDeath() {
+        if (lives <= 0) finishRun()
+        else {
+          generateLevel(false)
+          mode = "stageintro"
+          stageIntroLife = 0.8
+        }
+      }
+
+      function beginStageClear() {
+        if (mode !== "playing") return
+        objectiveMet = zoneIndex <= 1 ? stagePackages >= objectiveTarget
+                     : zoneIndex === 2 ? stageElapsed <= 45
+                     : lives === stageStartLives
+        objectiveAward = objectiveMet ? 1000 + stage * 250 : 0
+        score += stage * 500 + objectiveAward
+        mode = "stageclear"
+        stageClearLife = 2.4
+        leftHeld = rightHeld = upHeld = downHeld = purgeHeld = false
+        pendingMoveX = pendingMoveY = 0
+        shell.play(objectiveMet ? bonusSound : clearSound)
       }
 
       function finishRun() {
@@ -474,8 +643,10 @@ ShellRoot {
 
       function advanceStage() {
         stage += 1
-        mode = "playing"
-        generateLevel()
+        generateLevel(true)
+        mode = "stageintro"
+        stageIntroLife = 1.15
+        shell.play(mountSound)
       }
 
       function tickCombatEffects(dt) {
@@ -549,6 +720,10 @@ ShellRoot {
           event.accepted = true
           return
         }
+        if (mode === "dying" || mode === "stageintro") {
+          event.accepted = true
+          return
+        }
         if (event.key === Qt.Key_Left || event.key === Qt.Key_A) { leftHeld = true; setMoveIntent(-1, 0) }
         else if (event.key === Qt.Key_Right || event.key === Qt.Key_D) { rightHeld = true; setMoveIntent(1, 0) }
         else if (event.key === Qt.Key_Up || event.key === Qt.Key_W) { upHeld = true; setMoveIntent(0, -1) }
@@ -587,6 +762,13 @@ ShellRoot {
       }
 
       Timer {
+        interval: Math.max(430, 780 - game.stage * 25)
+        repeat: true
+        running: game.mode === "playing" && game.zoneIndex === 1
+        onTriggered: game.moveZoneHazards()
+      }
+
+      Timer {
         interval: 16
         repeat: true
         running: true
@@ -597,8 +779,20 @@ ShellRoot {
           game.playerVisualY += (game.playerY - game.playerVisualY) * movementEase
           game.pulseCooldown = Math.max(0, game.pulseCooldown - 0.016)
           game.pulseLife = Math.max(0, game.pulseLife - 0.016)
+          if (game.mode === "playing") game.stageElapsed += 0.016
           game.flushPendingMove()
           if (game.purgeHeld && game.pulseCooldown <= 0) game.purge()
+          game.tickUnstableTerrain(0.016)
+          if (game.mode === "dying") {
+            game.deathLife = Math.max(0, game.deathLife - 0.016)
+            if (game.deathLife <= 0) game.resolveDeath()
+          } else if (game.mode === "stageclear") {
+            game.stageClearLife = Math.max(0, game.stageClearLife - 0.016)
+            if (game.stageClearLife <= 0) game.advanceStage()
+          } else if (game.mode === "stageintro") {
+            game.stageIntroLife = Math.max(0, game.stageIntroLife - 0.016)
+            if (game.stageIntroLife <= 0) game.mode = "playing"
+          }
           game.tickCombatEffects(0.016)
           worldCanvas.requestPaint()
         }
@@ -626,6 +820,7 @@ ShellRoot {
               anchors.verticalCenter: parent.verticalCenter
               Text { text: "OMACADE // " + shell.cabinet.shortTitle; color: theme.accent; font.pixelSize: 19; font.bold: true; font.letterSpacing: 1.5 }
               Text { text: game.zoneName + "/DEEP/LEVEL-" + ("0" + String(game.stage)).slice(-2); color: game.zoneAccent; font.pixelSize: 12; font.family: "monospace"; font.bold: true }
+              Text { text: "BONUS: " + game.objectiveText + "  [" + game.objectiveProgress() + "]"; color: theme.muted; font.pixelSize: 9; font.family: "monospace"; font.bold: true }
             }
             Repeater {
               model: [
@@ -698,6 +893,49 @@ ShellRoot {
                 }
               }
 
+              for (var unstable = 0; unstable < game.unstableCells.length; unstable++) {
+                var cacheCell = game.unstableCells[unstable]
+                var ux = cacheCell.x * game.cellWidth
+                var uy = cacheCell.y * game.cellHeight
+                context.globalAlpha = Math.max(0.16, 1 - cacheCell.life / 3.2)
+                context.strokeStyle = theme.accent
+                context.lineWidth = cacheCell.life < 0.8 ? 3 : 1
+                context.strokeRect(ux + 3, uy + 3, game.cellWidth - 6, game.cellHeight - 6)
+              }
+              context.globalAlpha = 1
+
+              for (var hazard = 0; hazard < game.hazards.length; hazard++) {
+                var node = game.hazards[hazard]
+                var hx = (node.x + 0.5) * game.cellWidth
+                var hy = (node.y + 0.5) * game.cellHeight
+                if (node.type === "log") {
+                  var logWidth = game.cellWidth * 0.82
+                  var logHeight = game.cellHeight * 0.62
+                  context.fillStyle = theme.orange
+                  context.fillRect(hx - logWidth / 2, hy - logHeight / 2, logWidth, logHeight)
+                  context.strokeStyle = theme.background
+                  context.lineWidth = 2
+                  for (var stripe = -1; stripe <= 1; stripe++) {
+                    context.beginPath()
+                    context.moveTo(hx + stripe * logWidth * 0.24 - 3, hy - logHeight / 2)
+                    context.lineTo(hx + stripe * logWidth * 0.24 + 3, hy + logHeight / 2)
+                    context.stroke()
+                  }
+                } else {
+                  var active = game.firewallActive(node)
+                  context.globalAlpha = active ? 0.9 : 0.2
+                  context.strokeStyle = theme.red
+                  context.lineWidth = active ? 4 : 2
+                  context.beginPath()
+                  context.moveTo(hx, hy - game.cellHeight * 0.42)
+                  context.lineTo(hx, hy + game.cellHeight * 0.42)
+                  context.stroke()
+                  context.fillStyle = theme.yellow
+                  context.fillRect(hx - 3, hy - 3, 6, 6)
+                  context.globalAlpha = 1
+                }
+              }
+
               for (var shard = 0; shard < game.shards.length; shard++) {
                 var packageNode = game.shards[shard]
                 var px = (packageNode.x + 0.5) * game.cellWidth
@@ -719,7 +957,7 @@ ShellRoot {
               context.globalAlpha = 1
 
               if (game.pulseLife > 0 && game.pulsePath.length) {
-                context.globalAlpha = game.pulseLife / 0.18
+                context.globalAlpha = game.pulseLife / 0.14
                 context.strokeStyle = theme.accent
                 context.lineWidth = 4
                 context.beginPath()
@@ -801,8 +1039,11 @@ ShellRoot {
               var playerFrame = playerHorizontal ? 1 : 0
               var playerFlipX = playerHorizontal && game.facingX < 0
               var playerFlipY = !playerHorizontal && game.facingY > 0
+              var deathProgress = game.mode === "dying" ? 1 - game.deathLife / 0.95 : 0
+              var playerScale = 1.72 + deathProgress * 1.1
+              var playerOpacity = game.mode === "dying" ? Math.max(0, game.deathLife / 0.95) : 1
               if (!game.drawSprite(context, playerFrame, 0, playerCenterX, playerCenterY,
-                                   game.cellWidth * 1.72, game.cellHeight * 1.72, 1,
+                                   game.cellWidth * playerScale, game.cellHeight * playerScale, playerOpacity,
                                    playerFlipX, playerFlipY)) {
                 context.fillStyle = theme.accent
                 context.fillRect(playerCenterX - playerRadius, playerCenterY - playerRadius,
@@ -899,7 +1140,7 @@ ShellRoot {
             visible: game.mode === "paused" || game.mode === "stageclear" || game.mode === "gameover"
             anchors.centerIn: parent
             width: Math.min(parent.width - 50, 500)
-            height: 160
+            height: game.mode === "stageclear" ? 205 : 160
             radius: 10
             color: theme.surface
             border.color: game.mode === "stageclear" ? theme.green : game.mode === "paused" ? theme.accent : theme.red
@@ -908,7 +1149,25 @@ ShellRoot {
               anchors.centerIn: parent
               spacing: 12
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: game.mode === "paused" ? "PROCESS SUSPENDED" : game.mode === "stageclear" ? game.zoneName + " SANITIZED" : "KERNEL PANIC"; color: game.mode === "stageclear" ? game.zoneAccent : game.mode === "paused" ? theme.accent : theme.red; font.pixelSize: 23; font.bold: true }
-              Text { anchors.horizontalCenter: parent.horizontalCenter; text: game.mode === "paused" ? "P TO RESUME" : game.mode === "stageclear" ? "ENTER TO DESCEND" : "SCORE " + game.score + "  ·  ENTER TO REMOUNT"; color: theme.foreground; font.pixelSize: 13; font.family: "monospace" }
+              Text { visible: game.mode === "stageclear"; anchors.horizontalCenter: parent.horizontalCenter; text: game.objectiveMet ? "BONUS COMPLETE  +" + game.objectiveAward : "BONUS MISSED  //  " + game.objectiveText; color: game.objectiveMet ? theme.yellow : theme.muted; font.pixelSize: 12; font.family: "monospace"; font.bold: true }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: game.mode === "paused" ? "P TO RESUME" : game.mode === "stageclear" ? "DESCENDING...  ·  ENTER TO SKIP" : "SCORE " + game.score + "  ·  ENTER TO REMOUNT"; color: theme.foreground; font.pixelSize: 13; font.family: "monospace" }
+            }
+          }
+
+          Rectangle {
+            visible: game.mode === "dying" || game.mode === "stageintro"
+            anchors.centerIn: parent
+            width: Math.min(parent.width - 50, 520)
+            height: 132
+            radius: 10
+            color: theme.surface
+            border.color: game.mode === "dying" ? theme.red : game.zoneAccent
+            border.width: 2
+            Column {
+              anchors.centerIn: parent
+              spacing: 10
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: game.mode === "dying" ? "SEGFAULT" : "MOUNTING " + game.zoneName; color: game.mode === "dying" ? theme.red : game.zoneAccent; font.pixelSize: 25; font.bold: true; font.letterSpacing: 2 }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: game.mode === "dying" ? game.statusMessage : "DEPTH " + game.stage + "  //  " + game.objectiveText; color: theme.foreground; font.pixelSize: 12; font.family: "monospace"; font.bold: true }
             }
           }
 
