@@ -41,7 +41,7 @@ ShellRoot {
       readonly property int columns: 15
       readonly property int rows: 12
       readonly property real playfieldAspect: columns / rows
-      readonly property url spriteAtlas: Qt.resolvedUrl("assets/packet-hop-sprites-v2.png")
+      readonly property url spriteAtlas: Qt.resolvedUrl("assets/packet-hop-sprites-v3.png")
       readonly property real spriteCell: 313.5
       readonly property real spriteScale: 0.76
       readonly property string zoneName: stage === 1 ? "/LAN" : stage === 2 ? "/WAN" : stage === 3 ? "/VPN" : "/ROOT"

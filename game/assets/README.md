@@ -40,13 +40,21 @@ atlas generated with OpenAI's built-in image generation tool for Cabinet 03.
 It contains courier packet states, process traffic, network carriers, root
 sockets, TTL pickup, and routing effects.
 
-`packet-hop-sprites-v2.png` is the production atlas. It preserves the courier
+`packet-hop-sprites-v2.png` preserves the courier
 packet, firewall, fiber, encrypted-tunnel, VPN-relay, port, TTL, and routing
 cells from the original atlas. Four industrial-looking cells were replaced
 with a corrupted-packet stream, rack switch, deep-packet-inspection scanner,
 and segmented Ethernet-frame carrier. The four replacements were generated
 with the built-in image generation tool, their preview checkerboard was removed,
 and only those cells were composited over the original transparent atlas.
+
+`packet-hop-sprites-v3.png` is the production atlas. It removes residual
+industrial silhouettes that survived beneath four v2 replacements. The new
+corrupted-packet swarm contains only fragmented data frames; the buffering
+switch is a clean rack appliance; the DPI hazard is a stationary scanner gate;
+and the rideable Ethernet carrier is a flat chain of linked frames. A grayscale
+alpha mask explicitly cleared those four old cells before the replacements were
+composited, preventing hidden crawler, wheel, cargo, or container pixels.
 
 Final generation prompt:
 
@@ -69,6 +77,19 @@ Final v2 edit prompt:
 > deep-packet-inspection scanner. Replace row three column two with a segmented
 > teal Ethernet-frame carrier. Use unmistakable networking cues; no vehicles,
 > shipping containers, desktop windows, text, logos, or art crossing cells.
+
+Final v3 edit prompt:
+
+> Surgically rebuild only row two columns one through three and row three
+> column two while preserving the 1254×1254 4×4 atlas geometry and all other
+> cells. Create a red swarm of small corrupted header/payload packets with bit
+> trails; a low orange rack switch with RJ45 ports, activity LEDs, and buffer
+> lights; a stationary magenta DPI gate with packets crossing a central scan
+> beam; and a flat teal chain of linked Ethernet frames with header/payload
+> divisions and edge contacts. Keep true transparency and the existing neon
+> pixel-art style. No chassis, wheels, tracks, antenna mast, forklift, cargo,
+> shipping container, road vehicle, rocket, exhaust, desktop window, text,
+> logos, watermark, checkerboard, or art crossing cells.
 
 ## Sound effects
 
