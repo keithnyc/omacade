@@ -47,8 +47,8 @@ ShellRoot {
       readonly property string zoneName: stage === 1 ? "/LAN" : stage === 2 ? "/WAN" : stage === 3 ? "/VPN" : "/ROOT"
       readonly property string routeRule: stage === 1 ? "LOCAL TRAFFIC // SWITCHES BUFFER"
                                             : stage === 2 ? "FIREWALLS PULSE // DPI SWEEPS"
-                                            : stage === 3 ? "SSH PHASES // VPN RELAYS REVERSE"
-                                            : "ALL ROUTES REBALANCE // TTL TIGHT"
+                                            : stage === 3 ? "SSH PHASES // ROUTE EVENTS LIVE"
+                                            : "ALL EVENTS LIVE // TTL TIGHT"
       readonly property real cellWidth: playfield.width / columns
       readonly property real cellHeight: playfield.height / rows
       readonly property bool tooSmall: playfield.width < 620 || playfield.height < 496
@@ -56,6 +56,7 @@ ShellRoot {
       property var lanes: []
       property var ports: []
       property var ttlPickup: ({ x: 7, y: 5, active: true })
+      property var cachePickup: ({ x: 7, y: 5, active: false })
       property real playerX: 7
       property int playerY: 11
       property real playerVisualX: 7
@@ -71,7 +72,11 @@ ShellRoot {
       property real animationTime: 0
       property real stageTime: 0
       property real transitionLife: 0
-      property real routeWarningLife: 0
+      property string networkEvent: ""
+      property string eventPhase: "idle"
+      property real eventLife: 0
+      property int eventLaneRow: -1
+      property int eventSerial: 0
       property real lastHopAt: -10000
       property real lastNearMissAt: -10000
       property int intentX: 0
@@ -82,6 +87,27 @@ ShellRoot {
       property bool downHeld: false
       property string initialsInput: ""
       property bool initialsPristine: true
+
+      readonly property string eventName: mode === "binding" ? "PORT HANDSHAKE"
+                                                : networkEvent === "packetloss" ? "PACKET LOSS"
+                                                : networkEvent === "burst" ? "BURST TRAFFIC"
+                                                : networkEvent === "routeflap" ? "ROUTE FLAP"
+                                                : networkEvent === "cache" ? "CACHE HIT"
+                                                : "LINK NOMINAL"
+      readonly property string eventDetail: mode === "binding" ? "SYN  →  ACK // ROUTE ADDED"
+                                                  : eventPhase === "warning" ? "L" + eventLaneRow + " // CHANGE IN " + Math.max(1, Math.ceil(eventLife)) + "S"
+                                                  : networkEvent === "packetloss" ? "L" + eventLaneRow + " OFFLINE // CROSS NOW"
+                                                  : networkEvent === "burst" ? "L" + eventLaneRow + " 1.7X // WATCH GAPS"
+                                                  : networkEvent === "routeflap" ? "L" + eventLaneRow + " REVERSED // RE-ROUTE"
+                                                  : networkEvent === "cache" ? "ROW 5 // +6 TTL +450"
+                                                  : "NO ACTIVE NETWORK EVENT"
+      readonly property color eventColor: mode === "binding" ? theme.green
+                                             : eventPhase === "warning" ? theme.yellow
+                                             : networkEvent === "packetloss" ? theme.accent
+                                             : networkEvent === "burst" ? theme.red
+                                             : networkEvent === "routeflap" ? theme.orange
+                                             : networkEvent === "cache" ? theme.green
+                                             : theme.muted
 
       Component.onCompleted: {
         worldCanvas.loadImage(spriteAtlas)
@@ -115,7 +141,7 @@ ShellRoot {
       }
 
       function laneIsWarning(source) {
-        if (routeWarningLife > 0 && (source.kind === "vpn" || stage >= 4)) return true
+        if (eventPhase === "warning" && source.row === eventLaneRow) return true
         if (source.kind === "ssh" && stage >= 3) {
           var sshCycle = laneCycle(source, 4.8)
           return sshCycle >= 2.9 && sshCycle < 3.45
@@ -128,6 +154,7 @@ ShellRoot {
       }
 
       function laneIsActive(source) {
+        if (networkEvent === "packetloss" && eventPhase === "active" && source.row === eventLaneRow) return false
         if (source.kind === "ssh" && stage >= 3) {
           var sshCycle = laneCycle(source, 4.8)
           return sshCycle < 3.45 || sshCycle >= 4.25
@@ -140,10 +167,11 @@ ShellRoot {
       }
 
       function laneSpeedFactor(source) {
-        if (routeWarningLife > 0 && (source.kind === "vpn" || stage >= 4)) return 0.24
-        if (source.kind === "package") return laneCycle(source, 4.2) < 0.7 ? 0 : 1
-        if (source.kind === "service") return 0.78 + 0.42 * (0.5 + 0.5 * Math.sin(stageTime * 2.4 + source.row))
-        return 1
+        var factor = 1
+        if (source.kind === "package") factor = laneCycle(source, 4.2) < 0.7 ? 0 : 1
+        else if (source.kind === "service") factor = 0.78 + 0.42 * (0.5 + 0.5 * Math.sin(stageTime * 2.4 + source.row))
+        if (networkEvent === "burst" && eventPhase === "active" && source.row === eventLaneRow) factor *= 1.72
+        return factor
       }
 
       function dpiBeamX(source, item) {
@@ -160,7 +188,10 @@ ShellRoot {
       }
 
       function buildStage() {
-        routeWarningLife = 0
+        networkEvent = ""
+        eventPhase = "idle"
+        eventLife = 0
+        eventLaneRow = -1
         stageTime = 0
         var pace = 0.72 + Math.min(stage - 1, 5) * 0.13
         var networkKinds = stage === 1 ? ["pipe", "ssh", "container"]
@@ -186,6 +217,7 @@ ShellRoot {
           { x: 10, bound: false }, { x: 13, bound: false }
         ]
         ttlPickup = { x: 2 + Math.floor(Math.random() * 12), y: 5, active: true }
+        cachePickup = { x: 7, y: 5, active: false }
         ttl = Math.max(25, 48 - (stage - 1) * 4.5)
         resetCourier()
         statusMessage = zoneName + " // " + routeRule
@@ -208,6 +240,7 @@ ShellRoot {
         stage = 1
         lives = 3
         deliveries = 0
+        eventSerial = 0
         buildStage()
         mode = "stageintro"
         transitionLife = 1.1
@@ -245,6 +278,7 @@ ShellRoot {
         if (dy < 0) score += 10 + stage * 2
         shell.play(hopSound)
         collectTtl()
+        collectCache()
         checkSafety()
         if (mode === "playing" && dy < 0) awardNearMiss(lane(playerY))
         worldCanvas.requestPaint()
@@ -285,6 +319,16 @@ ShellRoot {
         score += 300
         statusMessage = "TTL REFRESHED +9"
         shell.play(ttlSound)
+      }
+
+      function collectCache() {
+        if (!cachePickup.active || playerY !== cachePickup.y || Math.abs(playerX - cachePickup.x) > 0.58) return
+        cachePickup = { x: cachePickup.x, y: cachePickup.y, active: false }
+        ttl = Math.min(55, ttl + 6)
+        score += 450
+        statusMessage = "CACHE SERVED // +6 TTL // +450"
+        finishNetworkEvent("")
+        shell.play(bindSound)
       }
 
       function itemOverlap(item, x, margin) {
@@ -439,28 +483,82 @@ ShellRoot {
         else checkSafety()
       }
 
-      function rebalanceRoutes() {
-        if (mode !== "playing" || stage < 3) return
+      function reverseEventLane() {
         var updated = []
         for (var i = 0; i < lanes.length; i++) {
           var source = lanes[i]
-          var shouldReverse = source.kind === "vpn" || stage >= 4
           updated.push({ row: source.row, type: source.type, kind: source.kind,
-                         direction: shouldReverse ? -source.direction : source.direction,
+                         direction: source.row === eventLaneRow ? -source.direction : source.direction,
                          speed: source.speed, items: source.items })
         }
         lanes = updated
-        statusMessage = stage === 3 ? "VPN ROUTE ROTATED // RELAYS REVERSING"
-                                    : "ROOT TABLE REBALANCED // ALL LANES REVERSE"
+      }
+
+      function queueNetworkEvent() {
+        if (mode !== "playing" || networkEvent.length > 0) return
+        var choices = stage === 1 ? ["cache"]
+                    : stage === 2 ? ["cache", "packetloss", "burst"]
+                    : ["routeflap", "cache", "packetloss", "burst"]
+        var selection = eventSerial
+        eventSerial += 1
+        networkEvent = choices[selection % choices.length]
+        if (networkEvent === "cache") {
+          var cacheX = 2 + Math.floor(Math.random() * 12)
+          if (ttlPickup.active && Math.abs(cacheX - ttlPickup.x) < 1.2) cacheX = (cacheX + 4) % 13 + 1
+          cachePickup = { x: cacheX, y: 5, active: true }
+          eventLaneRow = 5
+          eventPhase = "active"
+          eventLife = 7.0
+          statusMessage = "CACHE HIT // COLLECT ON ROW 5 // +TTL"
+          shell.play(bindSound)
+          return
+        }
+
+        var candidates = []
+        for (var i = 0; i < lanes.length; i++) {
+          var source = lanes[i]
+          var eligible = networkEvent === "routeflap" ? source.type === "network"
+                       : networkEvent === "burst" ? source.type === "process" && source.kind !== "package"
+                       : source.type === "process"
+          if (eligible)
+            candidates.push(source)
+        }
+        var target = candidates[(selection + stage) % candidates.length]
+        eventLaneRow = target.row
+        eventPhase = "warning"
+        eventLife = 1.35
+        statusMessage = networkEvent === "packetloss" ? "PACKET LOSS // L" + eventLaneRow + " DROPS IN 1S"
+                      : networkEvent === "burst" ? "BURST TRAFFIC // L" + eventLaneRow + " SURGES IN 1S"
+                      : "ROUTE FLAP // L" + eventLaneRow + " REVERSES IN 1S"
         shell.play(ttlSound)
       }
 
-      function queueRouteRebalance() {
-        if (mode !== "playing" || stage < 3 || routeWarningLife > 0) return
-        routeWarningLife = 1.15
-        statusMessage = stage === 3 ? "VPN ROUTE CHANGE // REVERSAL IN 1S"
-                                    : "ROOT TABLE UNSTABLE // REVERSAL IN 1S"
+      function activateNetworkEvent() {
+        eventPhase = "active"
+        if (networkEvent === "routeflap") reverseEventLane()
+        eventLife = networkEvent === "packetloss" ? 2.8 : networkEvent === "burst" ? 3.2 : 3.6
+        statusMessage = networkEvent === "packetloss" ? "PACKET LOSS // L" + eventLaneRow + " OFFLINE"
+                      : networkEvent === "burst" ? "BURST TRAFFIC // L" + eventLaneRow + " AT 1.7X"
+                      : "ROUTE FLAP // L" + eventLaneRow + " REVERSED"
         shell.play(ttlSound)
+      }
+
+      function finishNetworkEvent(message) {
+        if (networkEvent === "routeflap" && eventPhase === "active") reverseEventLane()
+        cachePickup = { x: cachePickup.x, y: cachePickup.y, active: false }
+        networkEvent = ""
+        eventPhase = "idle"
+        eventLife = 0
+        eventLaneRow = -1
+        if (message && message.length > 0) statusMessage = message
+      }
+
+      function tickNetworkEvent(dt) {
+        if (mode !== "playing" || networkEvent.length === 0) return
+        eventLife = Math.max(0, eventLife - dt)
+        if (eventLife > 0) return
+        if (eventPhase === "warning") activateNetworkEvent()
+        else finishNetworkEvent("LINK STABLE // EVENT CLEARED")
       }
 
       Keys.onPressed: function(event) {
@@ -528,10 +626,10 @@ ShellRoot {
       }
 
       Timer {
-        interval: game.stage >= 4 ? 4800 : 6000
+        interval: game.stage === 1 ? 9000 : game.stage === 2 ? 7500 : 6200
         repeat: true
-        running: game.mode === "playing" && game.stage >= 3
-        onTriggered: game.queueRouteRebalance()
+        running: game.mode === "playing"
+        onTriggered: game.queueNetworkEvent()
       }
 
       Timer {
@@ -541,10 +639,7 @@ ShellRoot {
         onTriggered: {
           game.animationTime += 0.016
           if (game.mode === "playing") game.stageTime += 0.016
-          if (game.mode === "playing" && game.routeWarningLife > 0) {
-            game.routeWarningLife = Math.max(0, game.routeWarningLife - 0.016)
-            if (game.routeWarningLife <= 0) game.rebalanceRoutes()
-          }
+          game.tickNetworkEvent(0.016)
           game.playerVisualX += (game.playerX - game.playerVisualX) * 0.25
           game.playerVisualY += (game.playerY - game.playerVisualY) * 0.25
           game.tickWorld(0.016)
@@ -579,9 +674,9 @@ ShellRoot {
             anchors.leftMargin: 24
             anchors.rightMargin: 24
             Column {
-              width: parent.width * 0.42
+              width: parent.width * 0.38
               anchors.verticalCenter: parent.verticalCenter
-              Text { text: "OMACADE // " + shell.cabinet.shortTitle; color: theme.accent; font.pixelSize: 19; font.bold: true; font.letterSpacing: 1.4 }
+              Text { text: "OMACADE // " + shell.cabinet.shortTitle; color: theme.accent; font.pixelSize: 18; font.bold: true; font.letterSpacing: 1.2 }
               Text { text: game.zoneName + "/ROUTE/STAGE-" + ("0" + game.stage).slice(-2); color: theme.green; font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Text { text: game.routeRule; color: theme.muted; font.pixelSize: 9; font.family: "monospace"; font.bold: true }
             }
@@ -591,10 +686,35 @@ ShellRoot {
                 { label: "LIVES", value: game.lives }, { label: "PORTS", value: game.ports.filter(function(port) { return port.bound }).length + "/5" }
               ]
               delegate: Column {
-                width: (parent.width * 0.58) / 4
+                width: (parent.width * 0.40) / 4
                 anchors.verticalCenter: parent.verticalCenter
                 Text { text: modelData.label; color: theme.muted; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
                 Text { text: modelData.value; color: modelData.label === "TTL" && game.ttl < 10 ? theme.red : theme.foreground; font.pixelSize: 18; font.family: "monospace"; font.bold: true }
+              }
+            }
+            Rectangle {
+              width: parent.width * 0.22
+              height: 56
+              anchors.verticalCenter: parent.verticalCenter
+              radius: 6
+              color: theme.background
+              border.color: game.eventColor
+              border.width: game.networkEvent.length > 0 || game.mode === "binding" ? 2 : 1
+              opacity: game.eventPhase === "warning" ? 0.76 + 0.2 * Math.sin(game.animationTime * 15) : 1
+              Column {
+                anchors.centerIn: parent
+                width: parent.width - 14
+                spacing: 3
+                Text {
+                  width: parent.width; text: "●  " + game.eventName; color: game.eventColor
+                  font.pixelSize: 10; font.family: "monospace"; font.bold: true
+                  elide: Text.ElideRight
+                }
+                Text {
+                  width: parent.width; text: game.eventDetail; color: theme.foreground
+                  font.pixelSize: 8; font.family: "monospace"; font.bold: true
+                  elide: Text.ElideRight
+                }
               }
             }
           }
@@ -829,15 +949,27 @@ ShellRoot {
                 if (game.mode === "binding" && Math.abs(socket.x - game.playerX) < 0.2) {
                   var bindX = (socket.x + 0.5) * game.cellWidth
                   var bindPulse = 0.55 + 0.35 * Math.sin(game.animationTime * 14)
-                  context.globalAlpha = bindPulse
                   context.strokeStyle = theme.green
-                  context.lineWidth = 3
-                  context.beginPath()
-                  context.arc(bindX, game.cellHeight * 0.5, game.cellHeight * 0.48, 0, Math.PI * 2)
-                  context.stroke()
-                  context.globalAlpha = 0.22
+                  for (var bindRing = 0; bindRing < 3; bindRing++) {
+                    context.globalAlpha = Math.max(0.12, bindPulse - bindRing * 0.2)
+                    context.lineWidth = 3 - bindRing * 0.6
+                    context.beginPath()
+                    context.arc(bindX, game.cellHeight * 0.5,
+                                game.cellHeight * (0.42 + bindRing * 0.2), 0, Math.PI * 2)
+                    context.stroke()
+                  }
+                  context.globalAlpha = 0.26
                   context.fillStyle = theme.green
-                  context.fillRect(bindX - 3, game.cellHeight * 0.72, 6, game.cellHeight * 1.05)
+                  context.fillRect(bindX - 4, game.cellHeight * 0.7, 8, game.cellHeight * 1.15)
+                  context.globalAlpha = 0.7
+                  context.font = "bold 10px monospace"
+                  context.fillText("SYN", bindX - game.cellWidth * 0.95, game.cellHeight * 1.58)
+                  context.fillText("ACK", bindX + game.cellWidth * 0.52, game.cellHeight * 1.58)
+                  context.lineWidth = 2
+                  context.beginPath()
+                  context.moveTo(bindX - game.cellWidth * 0.45, game.cellHeight * 1.48)
+                  context.lineTo(bindX + game.cellWidth * 0.45, game.cellHeight * 1.48)
+                  context.stroke()
                   context.globalAlpha = 1
                 }
                 game.drawSprite(context, socket.bound ? 1 : 0, 3,
@@ -857,6 +989,43 @@ ShellRoot {
                   context.globalAlpha = 0.08 + 0.05 * Math.sin(game.animationTime * 16)
                   context.fillStyle = theme.yellow
                   context.fillRect(0, traffic.row * game.cellHeight, width, game.cellHeight)
+                  context.globalAlpha = 1
+                }
+                var eventOnLane = game.networkEvent.length > 0 && game.eventLaneRow === traffic.row
+                if (eventOnLane) {
+                  var laneTop = traffic.row * game.cellHeight
+                  context.globalAlpha = game.eventPhase === "warning"
+                                      ? 0.12 + 0.08 * Math.sin(game.animationTime * 16) : 0.09
+                  context.fillStyle = game.eventColor
+                  context.fillRect(0, laneTop, width, game.cellHeight)
+                  context.globalAlpha = 0.78
+                  context.strokeStyle = game.eventColor
+                  context.lineWidth = 2
+                  context.strokeRect(1, laneTop + 1, width - 2, game.cellHeight - 2)
+                  if (game.networkEvent === "packetloss" && game.eventPhase === "active") {
+                    context.globalAlpha = 0.32
+                    context.lineWidth = 3
+                    for (var lossMark = 0; lossMark < game.columns; lossMark += 1.5) {
+                      var lossX = (lossMark + 0.5) * game.cellWidth
+                      context.beginPath()
+                      context.moveTo(lossX - 7, laneTop + game.cellHeight * 0.38)
+                      context.lineTo(lossX + 7, laneTop + game.cellHeight * 0.62)
+                      context.moveTo(lossX + 7, laneTop + game.cellHeight * 0.38)
+                      context.lineTo(lossX - 7, laneTop + game.cellHeight * 0.62)
+                      context.stroke()
+                    }
+                  }
+                  context.globalAlpha = 0.94
+                  context.fillStyle = theme.surface
+                  context.fillRect(7, laneTop + 6, game.cellWidth * 3.25, 19)
+                  context.strokeStyle = game.eventColor
+                  context.lineWidth = 1
+                  context.strokeRect(7, laneTop + 6, game.cellWidth * 3.25, 19)
+                  context.fillStyle = game.eventColor
+                  context.font = "bold 10px monospace"
+                  var laneEventText = game.eventPhase === "warning" ? "[!] L" + traffic.row + " // " + game.eventName + " IN 1S"
+                                    : "L" + traffic.row + " // " + game.eventDetail
+                  context.fillText(laneEventText, 14, laneTop + 19)
                   context.globalAlpha = 1
                 }
                 for (var item = 0; item < traffic.items.length; item++) {
@@ -892,6 +1061,28 @@ ShellRoot {
                                 (game.ttlPickup.x + 0.5) * game.cellWidth, (game.ttlPickup.y + 0.5) * game.cellHeight,
                                 game.cellWidth * 1.15, game.cellHeight * 1.15, 1, false)
 
+              if (game.cachePickup.active) {
+                var cacheX = (game.cachePickup.x + 0.5) * game.cellWidth
+                var cacheY = (game.cachePickup.y + 0.5) * game.cellHeight
+                var cachePulse = 0.68 + 0.25 * Math.sin(game.animationTime * 10)
+                context.globalAlpha = cachePulse
+                context.strokeStyle = theme.green
+                context.lineWidth = 3
+                context.beginPath()
+                context.arc(cacheX, cacheY, game.cellHeight * 0.42, 0, Math.PI * 2)
+                context.stroke()
+                context.globalAlpha = 1
+                game.drawSprite(context, 3, 3, cacheX, cacheY,
+                                game.cellWidth * 1.15, game.cellHeight * 1.15, 1, false)
+                context.fillStyle = theme.surface
+                context.fillRect(cacheX - 54, cacheY - game.cellHeight * 0.58, 108, 17)
+                context.strokeStyle = theme.green
+                context.strokeRect(cacheX - 54, cacheY - game.cellHeight * 0.58, 108, 17)
+                context.fillStyle = theme.green
+                context.font = "bold 9px monospace"
+                context.fillText("CACHE // +6 TTL", cacheX - 48, cacheY - game.cellHeight * 0.58 + 12)
+              }
+
               var px = (game.playerVisualX + 0.5) * game.cellWidth
               var py = (game.playerVisualY + 0.5) * game.cellHeight
               var courierFrame = game.mode === "binding" ? 2 : game.mode === "dropping" ? 3 : Math.floor(game.animationTime * 5) % 2
@@ -922,9 +1113,10 @@ ShellRoot {
             height: 29
             radius: 5
             color: theme.surface
-            border.color: theme.muted
-            opacity: 0.9
-            Text { id: routeStatus; anchors.centerIn: parent; text: game.statusMessage; color: theme.foreground; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+            border.color: game.networkEvent.length > 0 ? game.eventColor : theme.muted
+            border.width: game.networkEvent.length > 0 ? 2 : 1
+            opacity: game.eventPhase === "warning" ? 0.72 + 0.24 * Math.sin(game.animationTime * 15) : 0.94
+            Text { id: routeStatus; anchors.centerIn: parent; text: game.statusMessage; color: game.networkEvent.length > 0 ? game.eventColor : theme.foreground; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
           }
 
           Rectangle {

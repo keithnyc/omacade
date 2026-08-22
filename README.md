@@ -159,8 +159,12 @@ Its `/LAN`, `/WAN`, `/VPN`, and `/ROOT` routes introduce firewall traffic,
 encrypted relay carriers, announced direction reversals, and progressively
 tighter TTL budgets. Packet swarms now surge, switches buffer, DPI beams sweep,
 firewalls pulse open, SSH carriers phase, and VPN relays telegraph reversals.
-Near-miss bonuses, courier trails, and port-binding beams reinforce the new
-route behaviors. Next work is cabinet-wide polish and additional hazards.
+Stage-gated network events now add labeled cache hits, packet-loss windows,
+burst-traffic surges, and single-lane route flaps. A dedicated HUD signal module,
+countdown warnings, affected-lane callouts, and active-state graphics explain
+each event without asking the player to memorize it. Near-miss bonuses, courier
+trails, and SYN/ACK port-binding bursts reinforce the route behaviors. Next work
+is cabinet-wide polish and additional hazards.
 
 ## License
 
