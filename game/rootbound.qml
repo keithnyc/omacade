@@ -39,6 +39,13 @@ ShellRoot {
 
       readonly property int columns: 32
       readonly property int rows: 22
+      readonly property int zoneIndex: Math.min(3, Math.max(0, stage - 1))
+      readonly property string zoneName: ["/HOME", "/VAR", "/TMP", "/ROOT"][zoneIndex]
+      readonly property color zoneAccent: zoneIndex === 0 ? theme.green
+                                         : zoneIndex === 1 ? theme.orange
+                                         : zoneIndex === 2 ? theme.accent : theme.red
+      readonly property url spriteAtlas: Qt.resolvedUrl("assets/rootbound-sprites.png")
+      readonly property real spriteCell: 313.5
       property var soil: []
       property var enemies: []
       property var shards: []
@@ -74,6 +81,7 @@ ShellRoot {
       readonly property real cellHeight: playfield.height / rows
 
       Component.onCompleted: {
+        worldCanvas.loadImage(spriteAtlas)
         generateLevel()
         mode = "attract"
         forceActiveFocus()
@@ -111,6 +119,16 @@ ShellRoot {
         }
       }
 
+      function drawSprite(context, column, row, centerX, centerY, drawWidth, drawHeight, opacity) {
+        if (!worldCanvas.isImageLoaded(spriteAtlas)) return false
+        context.globalAlpha = opacity === undefined ? 1 : opacity
+        context.drawImage(spriteAtlas,
+                          column * spriteCell, row * spriteCell, spriteCell, spriteCell,
+                          centerX - drawWidth / 2, centerY - drawHeight / 2, drawWidth, drawHeight)
+        context.globalAlpha = 1
+        return true
+      }
+
       function generateLevel() {
         var generated = []
         for (var i = 0; i < columns * rows; i++) generated.push(true)
@@ -118,20 +136,41 @@ ShellRoot {
         var startX = Math.floor(columns / 2)
         for (var top = 0; top <= 4; top++) carveCell(generated, startX, top)
 
-        var levels = [4, 9, 14, 19]
+        var levels = zoneIndex === 0 ? [4, 9, 14, 19]
+                   : zoneIndex === 1 ? [4, 8, 12, 16, 20]
+                   : zoneIndex === 2 ? [5, 10, 15, 19]
+                   : [5, 11, 16, 20]
         for (var row = 0; row < levels.length; row++) {
           var inset = 2 + Math.floor(Math.random() * 4)
-          for (var x = inset; x < columns - inset; x++) carveCell(generated, x, levels[row])
+          if (zoneIndex === 2) {
+            // /tmp is fragmented into short-lived cache pockets.
+            for (var pocket = 0; pocket < 3; pocket++) {
+              var pocketX = 1 + Math.floor(Math.random() * (columns - 8))
+              var pocketLength = 3 + Math.floor(Math.random() * 5)
+              for (var px = pocketX; px < Math.min(columns - 1, pocketX + pocketLength); px++)
+                carveCell(generated, px, levels[row])
+            }
+          } else {
+            for (var x = inset; x < columns - inset; x++) carveCell(generated, x, levels[row])
+          }
         }
-        var shafts = [4, 11, 20, 27]
+        var shafts = zoneIndex === 0 ? [4, 11, 20, 27]
+                   : zoneIndex === 1 ? [5, 9, 16, 23, 28]
+                   : zoneIndex === 2 ? [3, 12, 21, 29]
+                   : [5, 14, 24, 28]
         for (var shaft = 0; shaft < shafts.length; shaft++) {
           var from = 3 + Math.floor(Math.random() * 3)
           var to = rows - 2 - Math.floor(Math.random() * 2)
-          for (var y = from; y <= to; y++) carveCell(generated, shafts[shaft], y)
+          for (var y = from; y <= to; y++) {
+            var shaftX = shafts[shaft]
+            if (zoneIndex === 3 && y % 4 === shaft % 4) shaftX += shaft % 2 ? -1 : 1
+            carveCell(generated, shaftX, y)
+          }
         }
 
         // Offset branches make each filesystem layout less grid-perfect.
-        for (var branch = 0; branch < 7 + Math.min(stage, 5); branch++) {
+        var branchCount = [7, 11, 15, 18][zoneIndex] + Math.min(stage, 5)
+        for (var branch = 0; branch < branchCount; branch++) {
           var branchY = 5 + Math.floor(Math.random() * (rows - 7))
           var branchX = 2 + Math.floor(Math.random() * (columns - 7))
           var length = 3 + Math.floor(Math.random() * 6)
@@ -153,7 +192,8 @@ ShellRoot {
         for (var enemy = 0; enemy < enemyCount && candidates.length; enemy++) {
           var choice = candidates.splice(Math.floor(Math.random() * candidates.length), 1)[0]
           if (Math.abs(choice.x - playerX) + Math.abs(choice.y - playerY) < 10) { enemy--; continue }
-          var rootkit = stage >= 2 && enemy >= Math.max(2, enemyCount - Math.ceil(stage / 3))
+          var rootkitQuota = zoneIndex === 0 ? 0 : zoneIndex === 1 ? 1 : zoneIndex === 2 ? 2 : Math.ceil(enemyCount / 2)
+          var rootkit = enemy >= enemyCount - rootkitQuota
           spawned.push(daemonState(choice.x, choice.y, rootkit ? "rootkit" : "zombie",
                                     Math.random() * 6.28, 0, 0, 0))
         }
@@ -174,7 +214,7 @@ ShellRoot {
         pulseLife = 0
         scoreBursts = []
         purgeParticles = []
-        statusMessage = "DEPTH " + stage + " MOUNTED"
+        statusMessage = zoneName + " // DEPTH " + stage + " MOUNTED"
         worldCanvas.requestPaint()
       }
 
@@ -196,7 +236,8 @@ ShellRoot {
         facingX = dx
         facingY = dy
         var digging = isSoil(nextX, nextY)
-        moveInterval = digging ? 235 : 175
+        var digIntervals = [225, 240, 200, 255]
+        moveInterval = digging ? digIntervals[zoneIndex] : 175
         if (digging) {
           setSoil(nextX, nextY, false)
           score += 10 + stage
@@ -529,7 +570,7 @@ ShellRoot {
               width: parent.width * 0.45
               anchors.verticalCenter: parent.verticalCenter
               Text { text: "OMACADE // " + shell.cabinet.shortTitle; color: theme.accent; font.pixelSize: 19; font.bold: true; font.letterSpacing: 1.5 }
-              Text { text: "/VAR/DEEP/LEVEL-" + ("0" + String(game.stage)).slice(-2); color: theme.muted; font.pixelSize: 12; font.family: "monospace" }
+              Text { text: game.zoneName + "/DEEP/LEVEL-" + ("0" + String(game.stage)).slice(-2); color: game.zoneAccent; font.pixelSize: 12; font.family: "monospace"; font.bold: true }
             }
             Repeater {
               model: [
@@ -560,6 +601,7 @@ ShellRoot {
           Canvas {
             id: worldCanvas
             anchors.fill: parent
+            onImageLoaded: requestPaint()
             onPaint: {
               var context = getContext("2d")
               context.reset()
@@ -574,9 +616,25 @@ ShellRoot {
                     var layer = y < 6 ? theme.surfaceRaised : y < 13 ? theme.surface : theme.background
                     context.fillStyle = layer
                     context.fillRect(cellX, cellY, game.cellWidth + 0.5, game.cellHeight + 0.5)
-                    context.globalAlpha = 0.18
-                    context.strokeStyle = y % 2 === 0 ? theme.muted : theme.accent
+                    context.globalAlpha = 0.06 + game.zoneIndex * 0.025
+                    context.fillStyle = game.zoneAccent
+                    context.fillRect(cellX, cellY, game.cellWidth + 0.5, game.cellHeight + 0.5)
+                    context.globalAlpha = 0.18 + game.zoneIndex * 0.025
+                    context.strokeStyle = y % 2 === 0 ? theme.muted : game.zoneAccent
                     context.strokeRect(cellX + 1, cellY + 1, game.cellWidth - 2, game.cellHeight - 2)
+                    if (game.zoneIndex === 1 && y % 2 === 0) {
+                      context.beginPath()
+                      context.moveTo(cellX + 3, cellY + game.cellHeight * 0.68)
+                      context.lineTo(cellX + game.cellWidth - 3, cellY + game.cellHeight * 0.68)
+                      context.stroke()
+                    } else if (game.zoneIndex === 2 && (x + y) % 3 === 0) {
+                      context.fillRect(cellX + game.cellWidth * 0.62, cellY + 3, 3, 3)
+                    } else if (game.zoneIndex === 3 && (x + y) % 2 === 0) {
+                      context.beginPath()
+                      context.moveTo(cellX + 2, cellY + game.cellHeight - 3)
+                      context.lineTo(cellX + game.cellWidth - 2, cellY + 3)
+                      context.stroke()
+                    }
                     context.globalAlpha = 1
                   } else {
                     context.fillStyle = theme.background
@@ -590,14 +648,18 @@ ShellRoot {
                 var px = (packageNode.x + 0.5) * game.cellWidth
                 var py = (packageNode.y + 0.5) * game.cellHeight
                 context.globalAlpha = game.isSoil(packageNode.x, packageNode.y) ? 0.38 : 1
-                context.fillStyle = theme.yellow
-                context.beginPath()
-                context.moveTo(px, py - game.cellHeight * 0.27)
-                context.lineTo(px + game.cellWidth * 0.27, py)
-                context.lineTo(px, py + game.cellHeight * 0.27)
-                context.lineTo(px - game.cellWidth * 0.27, py)
-                context.closePath()
-                context.fill()
+                var shardOpacity = context.globalAlpha
+                if (!game.drawSprite(context, 0, 3, px, py,
+                                     game.cellWidth * 1.18, game.cellHeight * 1.18, shardOpacity)) {
+                  context.fillStyle = theme.yellow
+                  context.beginPath()
+                  context.moveTo(px, py - game.cellHeight * 0.27)
+                  context.lineTo(px + game.cellWidth * 0.27, py)
+                  context.lineTo(px, py + game.cellHeight * 0.27)
+                  context.lineTo(px - game.cellWidth * 0.27, py)
+                  context.closePath()
+                  context.fill()
+                }
               }
               context.globalAlpha = 1
 
@@ -629,6 +691,12 @@ ShellRoot {
                 var capturePulse = daemon.capture > 0 ? Math.sin(game.animationTime * 8 + daemon.blink) * 0.04 : 0
                 var radius = baseRadius * (1 + daemon.capture * 0.22 + capturePulse)
                 var rootkit = daemon.type === "rootkit"
+                var daemonOpacity = rootkit && daemon.capture === 0
+                    ? 0.58 + Math.sin(game.animationTime * 5 + daemon.blink) * 0.2 : 1
+                var daemonScale = 1.72 + daemon.capture * 0.28 + capturePulse
+                if (game.drawSprite(context, daemon.capture, rootkit ? 2 : 1, ex, ey,
+                                    game.cellWidth * daemonScale, game.cellHeight * daemonScale,
+                                    daemonOpacity)) continue
                 context.globalAlpha = rootkit && daemon.capture === 0
                     ? 0.56 + Math.sin(game.animationTime * 5 + daemon.blink) * 0.22 : 1
                 context.fillStyle = daemon.hitFlash > 0 ? theme.foreground
@@ -674,22 +742,27 @@ ShellRoot {
               var playerCenterX = (game.playerVisualX + 0.5) * game.cellWidth
               var playerCenterY = (game.playerVisualY + 0.5) * game.cellHeight
               var playerRadius = Math.min(game.cellWidth, game.cellHeight) * 0.38
-              context.fillStyle = theme.accent
-              context.fillRect(playerCenterX - playerRadius, playerCenterY - playerRadius,
-                               playerRadius * 2, playerRadius * 2)
-              context.fillStyle = theme.background
-              context.fillRect(playerCenterX - playerRadius * 0.42, playerCenterY - playerRadius * 0.42,
-                               playerRadius * 0.84, playerRadius * 0.84)
-              context.fillStyle = theme.foreground
-              context.beginPath()
-              context.moveTo(playerCenterX + game.facingX * playerRadius * 1.45,
-                             playerCenterY + game.facingY * playerRadius * 1.45)
-              context.lineTo(playerCenterX - game.facingY * playerRadius * 0.42,
-                             playerCenterY + game.facingX * playerRadius * 0.42)
-              context.lineTo(playerCenterX + game.facingY * playerRadius * 0.42,
-                             playerCenterY - game.facingX * playerRadius * 0.42)
-              context.closePath()
-              context.fill()
+              var playerFrame = game.facingY < 0 ? 0 : game.facingX > 0 ? 1
+                              : game.facingY > 0 ? 2 : 3
+              if (!game.drawSprite(context, playerFrame, 0, playerCenterX, playerCenterY,
+                                   game.cellWidth * 1.72, game.cellHeight * 1.72, 1)) {
+                context.fillStyle = theme.accent
+                context.fillRect(playerCenterX - playerRadius, playerCenterY - playerRadius,
+                                 playerRadius * 2, playerRadius * 2)
+                context.fillStyle = theme.background
+                context.fillRect(playerCenterX - playerRadius * 0.42, playerCenterY - playerRadius * 0.42,
+                                 playerRadius * 0.84, playerRadius * 0.84)
+                context.fillStyle = theme.foreground
+                context.beginPath()
+                context.moveTo(playerCenterX + game.facingX * playerRadius * 1.45,
+                               playerCenterY + game.facingY * playerRadius * 1.45)
+                context.lineTo(playerCenterX - game.facingY * playerRadius * 0.42,
+                               playerCenterY + game.facingX * playerRadius * 0.42)
+                context.lineTo(playerCenterX + game.facingY * playerRadius * 0.42,
+                               playerCenterY - game.facingX * playerRadius * 0.42)
+                context.closePath()
+                context.fill()
+              }
 
               context.font = "bold " + Math.max(11, Math.floor(game.cellHeight * 0.55)) + "px monospace"
               context.textAlign = "center"
@@ -776,7 +849,7 @@ ShellRoot {
             Column {
               anchors.centerIn: parent
               spacing: 12
-              Text { anchors.horizontalCenter: parent.horizontalCenter; text: game.mode === "paused" ? "PROCESS SUSPENDED" : game.mode === "stageclear" ? "DEPTH " + game.stage + " SANITIZED" : "KERNEL PANIC"; color: game.mode === "stageclear" ? theme.green : game.mode === "paused" ? theme.accent : theme.red; font.pixelSize: 23; font.bold: true }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: game.mode === "paused" ? "PROCESS SUSPENDED" : game.mode === "stageclear" ? game.zoneName + " SANITIZED" : "KERNEL PANIC"; color: game.mode === "stageclear" ? game.zoneAccent : game.mode === "paused" ? theme.accent : theme.red; font.pixelSize: 23; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: game.mode === "paused" ? "P TO RESUME" : game.mode === "stageclear" ? "ENTER TO DESCEND" : "SCORE " + game.score + "  ·  ENTER TO REMOUNT"; color: theme.foreground; font.pixelSize: 13; font.family: "monospace" }
             }
           }

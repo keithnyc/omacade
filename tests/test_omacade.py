@@ -288,12 +288,19 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("function addPurgeBurst(", rootbound)
         self.assertIn('cabinetId: shell.cabinet.scoreKey', rootbound)
         self.assertIn("property int moveInterval: 175", rootbound)
-        self.assertIn("moveInterval = digging ? 235 : 175", rootbound)
+        self.assertIn("moveInterval = digging ? digIntervals[zoneIndex] : 175", rootbound)
         self.assertIn("function requestMove(dx, dy)", rootbound)
         self.assertIn("if (now - lastMoveAt < moveInterval) return", rootbound)
         self.assertEqual(rootbound.count("game.requestMove("), 4)
         self.assertIn("property real playerVisualX", rootbound)
         self.assertGreaterEqual(rootbound.count("if (event.isAutoRepeat)"), 2)
+        self.assertIn('["/HOME", "/VAR", "/TMP", "/ROOT"]', rootbound)
+        self.assertIn('Qt.resolvedUrl("assets/rootbound-sprites.png")', rootbound)
+
+        sprite = (ROOT / "game" / "assets" / "rootbound-sprites.png").read_bytes()
+        self.assertEqual(sprite[:8], b"\x89PNG\r\n\x1a\n")
+        self.assertEqual(int.from_bytes(sprite[16:20], "big"), 1254)
+        self.assertEqual(int.from_bytes(sprite[20:24], "big"), 1254)
 
     def test_flight_renderer_stays_inside_terminal_width(self) -> None:
         Settings = self.module["Settings"]

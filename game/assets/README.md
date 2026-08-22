@@ -14,6 +14,25 @@ Final generation prompt:
 > transparent square canvas. No ground, moon, stars, exhaust, shadow, border,
 > text, logo, watermark, or existing-franchise design.
 
+# Rootbound sprite atlas
+
+`rootbound-sprites.png` is an original 1254×1254 transparent 4×4 pixel-art
+atlas generated with OpenAI's built-in image generation tool. It contains four
+player directions, zombie and rootkit capture states, purge bursts, a package
+shard, and small effect sprites.
+
+Final generation prompt:
+
+> Create one exact 4 by 4 transparent sprite atlas for the Omacade Rootbound
+> arcade cabinet. Use crisp modern pixel art with a chunky 32-bit arcade
+> aesthetic and hard pixel edges. Row one contains the same cyan sysadmin drone
+> facing up, right, down, and left. Row two contains an active coral-red zombie,
+> cyan quarantined zombie, yellow compressed zombie, and deletion burst. Row
+> three contains equivalent orange angular rootkit states. Row four contains a
+> golden package shard, cyan purge spark, red warning glyph, and orange phase
+> spark. Keep every sprite centered and isolated in an equal cell, with no grid,
+> labels, letters, UI, watermark, or background.
+
 ## Sound effects
 
 The WAV files under `sfx/` are original synthesized effects generated locally

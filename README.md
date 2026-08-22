@@ -140,10 +140,11 @@ omarchy plugin remove io.github.keithnyc.omacade
 
 ## Roadmap
 
-Cabinet 02, Rootbound, has its first playable combat loop: tunnel-hunting zombie
-processes, soil-phasing rootkits, and a three-step quarantine/compress/purge
-system. Next work is original sound design, richer stage goals, and additional
-daemon behaviors.
+Cabinet 02, Rootbound, now combines its quarantine/compress/purge combat with an
+original pixel-art sprite atlas and four increasingly hostile filesystem zones:
+`/home`, `/var`, `/tmp`, and `/root`. Each zone changes tunnel topology, terrain
+treatment, digging resistance, and daemon composition. Next work is original
+sound design, environmental hazards, and additional daemon behaviors.
 
 ## License
 
