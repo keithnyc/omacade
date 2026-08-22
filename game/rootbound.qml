@@ -317,6 +317,7 @@ ShellRoot {
       }
 
       Keys.onPressed: function(event) {
+        if (event.isAutoRepeat) { event.accepted = true; return }
         if (mode === "initials") {
           if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) submitInitials()
           else if (event.key === Qt.Key_Backspace) {
@@ -364,6 +365,7 @@ ShellRoot {
       }
 
       Keys.onReleased: function(event) {
+        if (event.isAutoRepeat) { event.accepted = true; return }
         if (event.key === Qt.Key_Left || event.key === Qt.Key_A) leftHeld = false
         else if (event.key === Qt.Key_Right || event.key === Qt.Key_D) rightHeld = false
         else if (event.key === Qt.Key_Up || event.key === Qt.Key_W) upHeld = false

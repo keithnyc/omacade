@@ -285,6 +285,7 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("property int moveInterval: 175", rootbound)
         self.assertIn("moveInterval = digging ? 235 : 175", rootbound)
         self.assertIn("property real playerVisualX", rootbound)
+        self.assertGreaterEqual(rootbound.count("if (event.isAutoRepeat)"), 2)
 
     def test_flight_renderer_stays_inside_terminal_width(self) -> None:
         Settings = self.module["Settings"]
