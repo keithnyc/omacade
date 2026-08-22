@@ -265,6 +265,8 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn('entry: "shell.qml"', registry)
         self.assertIn('id: "rootbound"', registry)
         self.assertIn('entry: "rootbound.qml"', registry)
+        self.assertIn('id: "packet-hop"', registry)
+        self.assertIn('entry: "packet-hop.qml"', registry)
         self.assertIn("function recordScore(entry)", runtime)
         self.assertIn("property color accent", theme)
         self.assertIn("CabinetRegistry.cabinets", lobby)
@@ -272,6 +274,7 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn('arcade) target="$root/game/arcade.qml"', launcher)
         self.assertIn('lander) target="$root/game/shell.qml"', launcher)
         self.assertIn('rootbound) target="$root/game/rootbound.qml"', launcher)
+        self.assertIn('packet-hop|packethop) target="$root/game/packet-hop.qml"', launcher)
         self.assertIn("Exec=omarchy-launch-or-focus Omacade omacade-gui", desktop)
         self.assertIn('CabinetRegistry.byId("lander")', lander)
         self.assertIn("ArcadeData { id: arcadeData", lander)
@@ -315,6 +318,24 @@ class OmacadeTests(unittest.TestCase):
 
         for effect in ("dig", "package", "purge", "hit", "clear", "bonus", "mount", "hazard"):
             wav = (ROOT / "game" / "assets" / "sfx" / f"rootbound-{effect}.wav").read_bytes()
+            self.assertEqual(wav[:4], b"RIFF")
+            self.assertEqual(wav[8:12], b"WAVE")
+
+        packet_hop = (ROOT / "game" / "packet-hop.qml").read_text(encoding="utf-8")
+        self.assertIn('CabinetRegistry.byId("packet-hop")', packet_hop)
+        self.assertIn("function tickWorld(dt)", packet_hop)
+        self.assertIn("function bindPort(x)", packet_hop)
+        self.assertIn("function dropPacket(reason)", packet_hop)
+        self.assertIn('makeLane(2, "network", "pipe"', packet_hop)
+        self.assertIn('makeLane(6, "process", "service"', packet_hop)
+        self.assertIn('Qt.resolvedUrl("assets/packet-hop-sprites.png")', packet_hop)
+
+        packet_sprite = (ROOT / "game" / "assets" / "packet-hop-sprites.png").read_bytes()
+        self.assertEqual(packet_sprite[:8], b"\x89PNG\r\n\x1a\n")
+        self.assertEqual(int.from_bytes(packet_sprite[16:20], "big"), 1254)
+        self.assertEqual(int.from_bytes(packet_sprite[20:24], "big"), 1254)
+        for effect in ("hop", "bind", "drop", "stage", "ttl"):
+            wav = (ROOT / "game" / "assets" / "sfx" / f"packet-{effect}.wav").read_bytes()
             self.assertEqual(wav[:4], b"RIFF")
             self.assertEqual(wav[8:12], b"WAVE")
 

@@ -30,6 +30,21 @@ var cabinets = [
     accent: "yellow",
     status: "ready",
     controls: "← ↑ ↓ → DIG   ·   SPACE SUDO PURGE"
+  },
+  {
+    id: "packet-hop",
+    number: "03",
+    title: "Packet Hop",
+    displayTitle: "P A C K E T // H O P",
+    shortTitle: "PACKET//HOP",
+    windowTitle: "Omacade Packet Hop",
+    tagline: "Cross the stack. Don't drop the packet.",
+    description: "Dodge hostile processes, ride encrypted carriers, and bind every root port.",
+    entry: "packet-hop.qml",
+    scoreKey: "packet-hop",
+    accent: "accent",
+    status: "ready",
+    controls: "← ↑ ↓ → HOP / ROUTE"
   }
 ]
 

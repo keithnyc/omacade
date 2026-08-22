@@ -33,6 +33,23 @@ Final generation prompt:
 > spark. Keep every sprite centered and isolated in an equal cell, with no grid,
 > labels, letters, UI, watermark, or background.
 
+# Packet Hop sprite atlas
+
+`packet-hop-sprites.png` is an original 1254×1254 transparent 4×4 pixel-art
+atlas generated with OpenAI's built-in image generation tool for Cabinet 03.
+It contains courier packet states, process traffic, network carriers, root
+sockets, TTL pickup, and routing effects.
+
+Final generation prompt:
+
+> Create one exact 4 by 4 transparent sprite atlas for the Omacade PACKET//HOP
+> arcade cabinet in a crisp chunky 32-bit pixel-art style. Include cyan courier
+> packet idle, pulse, bound, and drop states; red service, orange package cart,
+> purple compositor window, and firewall hazards; cyan pipe, teal container,
+> blue SSH tunnel, and orange VPN platforms; empty and filled green sockets, a
+> yellow TTL clock, and a cyan routing burst. Keep every subject isolated and
+> centered in an equal cell with no grid, labels, text, UI, or watermark.
+
 ## Sound effects
 
 The WAV files under `sfx/` are original synthesized effects generated locally
@@ -43,3 +60,6 @@ launch, touchdown, stage-clear, crash, and comet cues.
 Rootbound has its own `rootbound-*.wav` set covering digging, package recovery,
 purging, damage, stage clear, bonus completion, mounting, and firewall denial.
 These are also original FFmpeg-synthesized waveforms with no sampled material.
+
+Packet Hop's original `packet-*.wav` set covers hopping, binding, drops, stage
+transitions, and TTL pickups using the same no-samples synthesis approach.

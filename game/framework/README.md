@@ -23,7 +23,7 @@ Each cabinet remains responsible for its own physics, rendering, input,
 cabinet-specific settings, and sound assets. Closing it returns control to the
 lobby automatically.
 
-## Adding Cabinet 02
+## Adding a cabinet
 
 1. Create its executable entrypoint as `game/<id>.qml`; Quickshell uses the
    entrypoint directory as its import boundary. Put supporting components and

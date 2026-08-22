@@ -2,7 +2,8 @@
 
 **Insert no coins.** Omacade is a modular, theme-aware arcade for
 [Omarchy](https://omarchy.org/). Version 0.1 includes polished Cabinet 01,
-**Lander**, and the playable Cabinet 02 prototype, **Rootbound**.
+**Lander**, the filesystem action game **Rootbound**, and the network-crossing
+Cabinet 03 vertical slice, **Packet Hop**.
 
 Lander is an original graphical game inspired by the broad lunar-landing genre.
 Rotate, manage a limited fuel supply, and settle both feet onto a marked pad.
@@ -90,6 +91,12 @@ Rootbound can also be launched directly while it is under development:
 omacade-gui rootbound
 ```
 
+Packet Hop can be launched directly with:
+
+```sh
+omacade-gui packet-hop
+```
+
 ## Local development
 
 From the parent directory of this checkout, link it under its manifest ID:
@@ -146,7 +153,9 @@ original pixel-art sprite atlas and four increasingly hostile filesystem zones:
 treatment, digging resistance, daemon composition, hazards, and optional bonus
 goals. Moving log blocks, rebuilding cache cells, timed firewall gates, animated
 stage transitions, and a dedicated synthesized sound set complete the current
-gameplay pass. Next work is additional daemon behaviors and cabinet-wide polish.
+gameplay pass. Cabinet 03, Packet Hop, adds a distinct lane-crossing game with
+process traffic, rideable network carriers, TTL pressure, and root-port delivery.
+Next work is cabinet-wide polish and additional Packet Hop route types.
 
 ## License
 
