@@ -42,7 +42,7 @@ ShellRoot {
       readonly property int rows: 12
       readonly property url spriteAtlas: Qt.resolvedUrl("assets/packet-hop-sprites.png")
       readonly property real spriteCell: 313.5
-      readonly property real spriteScale: 0.86
+      readonly property real spriteScale: 0.76
       readonly property string zoneName: stage === 1 ? "/LAN" : stage === 2 ? "/WAN" : stage === 3 ? "/VPN" : "/ROOT"
       readonly property real cellWidth: playfield.width / columns
       readonly property real cellHeight: playfield.height / rows
@@ -246,7 +246,7 @@ ShellRoot {
           if (!ridingItem(current)) dropPacket("NO CARRIER // PACKET LOST")
         } else {
           for (var i = 0; i < current.items.length; i++) {
-            if (itemOverlap(current.items[i], playerX, 0.20)) {
+            if (itemOverlap(current.items[i], playerX, 0.16)) {
               dropPacket("PROCESS COLLISION // PACKET DROPPED")
               return
             }

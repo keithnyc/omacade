@@ -329,7 +329,7 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn('makeLane(2, "network", "pipe"', packet_hop)
         self.assertIn('makeLane(6, "process", "service"', packet_hop)
         self.assertIn('Qt.resolvedUrl("assets/packet-hop-sprites.png")', packet_hop)
-        self.assertIn("readonly property real spriteScale: 0.86", packet_hop)
+        self.assertIn("readonly property real spriteScale: 0.76", packet_hop)
         self.assertIn("item.width * spriteScale / 2", packet_hop)
 
         packet_sprite = (ROOT / "game" / "assets" / "packet-hop-sprites.png").read_bytes()
