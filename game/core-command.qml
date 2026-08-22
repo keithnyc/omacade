@@ -338,14 +338,23 @@ ShellRoot {
             continue
           }
 
+          var step = threat.speed * dt
+          if (threat.type === "fork" && !threat.split) {
+            var forkY = threat.y + step
+            if (forkY >= 205) {
+              splitFork({ x: threat.x, y: 205, speed: threat.speed }, children)
+            } else {
+              active.push({ sx: threat.sx, sy: threat.sy,
+                            x: threat.x, y: forkY,
+                            tx: threat.tx, ty: threat.ty, targetKind: threat.targetKind,
+                            targetIndex: threat.targetIndex, type: threat.type,
+                            speed: threat.speed, split: threat.split })
+            }
+            continue
+          }
           var dx = threat.tx - threat.x
           var dy = threat.ty - threat.y
           var distance = Math.sqrt(dx * dx + dy * dy)
-          var step = threat.speed * dt
-          if (threat.type === "fork" && !threat.split && threat.y > 205) {
-            splitFork(threat, children)
-            continue
-          }
           if (distance <= step) {
             destroyTarget(threat)
             continue
@@ -443,6 +452,11 @@ ShellRoot {
         if (spawnedThreats >= waveThreats && threats.length === 0) beginWaveClear()
       }
 
+      function nudgeReticle(dx, dy) {
+        crosshairX = Math.max(22, Math.min(worldWidth - 22, crosshairX + dx))
+        crosshairY = Math.max(42, Math.min(groundY - 62, crosshairY + dy))
+      }
+
       Keys.onPressed: function(event) {
         if (event.isAutoRepeat) { event.accepted = true; return }
         if (mode === "initials") {
@@ -480,10 +494,10 @@ ShellRoot {
           return
         }
         if (mode !== "playing") { event.accepted = true; return }
-        if (event.key === Qt.Key_Left || event.key === Qt.Key_A) leftHeld = true
-        else if (event.key === Qt.Key_Right || event.key === Qt.Key_D) rightHeld = true
-        else if (event.key === Qt.Key_Up || event.key === Qt.Key_W) upHeld = true
-        else if (event.key === Qt.Key_Down || event.key === Qt.Key_S) downHeld = true
+        if (event.key === Qt.Key_Left || event.key === Qt.Key_A) { leftHeld = true; nudgeReticle(-8, 0) }
+        else if (event.key === Qt.Key_Right || event.key === Qt.Key_D) { rightHeld = true; nudgeReticle(8, 0) }
+        else if (event.key === Qt.Key_Up || event.key === Qt.Key_W) { upHeld = true; nudgeReticle(0, -8) }
+        else if (event.key === Qt.Key_Down || event.key === Qt.Key_S) { downHeld = true; nudgeReticle(0, 8) }
         else if (event.key === Qt.Key_Space) fireAt(crosshairX, crosshairY)
         else if (event.key === Qt.Key_1) selectedBattery = 0
         else if (event.key === Qt.Key_2) selectedBattery = 1
@@ -618,18 +632,27 @@ ShellRoot {
                 context.lineWidth = threat.type === "rootkit" ? 3 : 2
                 context.beginPath(); context.moveTo(threat.sx, threat.sy); context.lineTo(threat.x, threat.y); context.stroke()
                 context.globalAlpha = threatAlpha
-                context.save()
-                context.translate(threat.x, threat.y)
-                context.rotate(Math.PI * 0.25)
-                context.fillStyle = threatColor
-                var payloadSize = threat.type === "rootkit" ? 10 : 7
-                context.fillRect(-payloadSize / 2, -payloadSize / 2, payloadSize, payloadSize)
-                context.fillStyle = theme.background
-                context.fillRect(-payloadSize * 0.2, -payloadSize * 0.2, payloadSize * 0.4, payloadSize * 0.4)
-                context.restore()
                 if (threat.type === "fork") {
-                  context.strokeStyle = theme.orange; context.lineWidth = 2
-                  context.beginPath(); context.moveTo(threat.x - 7, threat.y - 7); context.lineTo(threat.x, threat.y); context.lineTo(threat.x + 7, threat.y - 7); context.stroke()
+                  context.fillStyle = threatColor
+                  context.fillRect(threat.x - 4, threat.y - 8, 8, 11)
+                  context.strokeStyle = theme.orange; context.lineWidth = 3
+                  context.beginPath()
+                  context.moveTo(threat.x, threat.y - 8)
+                  context.lineTo(threat.x, threat.y + 3)
+                  context.lineTo(threat.x - 8, threat.y + 10)
+                  context.moveTo(threat.x, threat.y + 3)
+                  context.lineTo(threat.x + 8, threat.y + 10)
+                  context.stroke()
+                } else {
+                  context.save()
+                  context.translate(threat.x, threat.y)
+                  context.rotate(Math.PI * 0.25)
+                  context.fillStyle = threatColor
+                  var payloadSize = threat.type === "rootkit" ? 10 : 7
+                  context.fillRect(-payloadSize / 2, -payloadSize / 2, payloadSize, payloadSize)
+                  context.fillStyle = theme.background
+                  context.fillRect(-payloadSize * 0.2, -payloadSize * 0.2, payloadSize * 0.4, payloadSize * 0.4)
+                  context.restore()
                 }
                 if (threat.y > game.groundY - 165) {
                   var targetPulse = 8 + 3 * Math.sin(game.animationTime * 12 + t)
@@ -742,6 +765,7 @@ ShellRoot {
             anchors.fill: parent
             hoverEnabled: true
             enabled: game.mode === "playing"
+            cursorShape: enabled ? Qt.BlankCursor : Qt.ArrowCursor
             onPositionChanged: function(mouse) {
               game.crosshairX = mouse.x / width * game.worldWidth
               game.crosshairY = Math.max(42, Math.min(game.groundY - 62, mouse.y / height * game.worldHeight))
