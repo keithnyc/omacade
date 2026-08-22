@@ -42,6 +42,7 @@ ShellRoot {
       readonly property int rows: 12
       readonly property url spriteAtlas: Qt.resolvedUrl("assets/packet-hop-sprites.png")
       readonly property real spriteCell: 313.5
+      readonly property real spriteScale: 0.86
       readonly property string zoneName: stage === 1 ? "/LAN" : stage === 2 ? "/WAN" : stage === 3 ? "/VPN" : "/ROOT"
       readonly property real cellWidth: playfield.width / columns
       readonly property real cellHeight: playfield.height / rows
@@ -83,13 +84,15 @@ ShellRoot {
 
       function drawSprite(context, column, row, centerX, centerY, drawWidth, drawHeight, opacity, flipX) {
         if (!worldCanvas.isImageLoaded(spriteAtlas)) return false
+        var scaledWidth = drawWidth * spriteScale
+        var scaledHeight = drawHeight * spriteScale
         context.save()
         context.globalAlpha = opacity === undefined ? 1 : opacity
         context.translate(centerX, centerY)
         context.scale(flipX ? -1 : 1, 1)
         context.drawImage(spriteAtlas,
                           column * spriteCell, row * spriteCell, spriteCell, spriteCell,
-                          -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight)
+                          -scaledWidth / 2, -scaledHeight / 2, scaledWidth, scaledHeight)
         context.restore()
         return true
       }
@@ -216,7 +219,7 @@ ShellRoot {
       }
 
       function collectTtl() {
-        if (!ttlPickup.active || playerY !== ttlPickup.y || Math.abs(playerX - ttlPickup.x) > 0.68) return
+        if (!ttlPickup.active || playerY !== ttlPickup.y || Math.abs(playerX - ttlPickup.x) > 0.58) return
         ttlPickup = { x: ttlPickup.x, y: ttlPickup.y, active: false }
         ttl = Math.min(55, ttl + 9)
         score += 300
@@ -225,13 +228,13 @@ ShellRoot {
       }
 
       function itemOverlap(item, x, margin) {
-        return Math.abs(item.x - x) <= item.width / 2 + margin
+        return Math.abs(item.x - x) <= item.width * spriteScale / 2 + margin
       }
 
       function ridingItem(targetLane) {
         if (!targetLane) return null
         for (var i = 0; i < targetLane.items.length; i++)
-          if (itemOverlap(targetLane.items[i], playerX, -0.12)) return targetLane.items[i]
+          if (itemOverlap(targetLane.items[i], playerX, -0.08)) return targetLane.items[i]
         return null
       }
 
@@ -243,7 +246,7 @@ ShellRoot {
           if (!ridingItem(current)) dropPacket("NO CARRIER // PACKET LOST")
         } else {
           for (var i = 0; i < current.items.length; i++) {
-            if (itemOverlap(current.items[i], playerX, 0.12)) {
+            if (itemOverlap(current.items[i], playerX, 0.20)) {
               dropPacket("PROCESS COLLISION // PACKET DROPPED")
               return
             }
