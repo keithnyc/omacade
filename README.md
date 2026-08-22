@@ -155,7 +155,9 @@ goals. Moving log blocks, rebuilding cache cells, timed firewall gates, animated
 stage transitions, and a dedicated synthesized sound set complete the current
 gameplay pass. Cabinet 03, Packet Hop, adds a distinct lane-crossing game with
 process traffic, rideable network carriers, TTL pressure, and root-port delivery.
-Next work is cabinet-wide polish and additional Packet Hop route types.
+Its `/LAN`, `/WAN`, `/VPN`, and `/ROOT` routes introduce firewall traffic,
+encrypted relay carriers, announced direction reversals, and progressively
+tighter TTL budgets. Next work is cabinet-wide polish and additional hazards.
 
 ## License
 

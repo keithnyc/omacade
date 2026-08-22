@@ -44,6 +44,10 @@ ShellRoot {
       readonly property real spriteCell: 313.5
       readonly property real spriteScale: 0.76
       readonly property string zoneName: stage === 1 ? "/LAN" : stage === 2 ? "/WAN" : stage === 3 ? "/VPN" : "/ROOT"
+      readonly property string routeRule: stage === 1 ? "LOCAL TRAFFIC // LEARN THE GAPS"
+                                            : stage === 2 ? "FIREWALL TRAFFIC ONLINE"
+                                            : stage === 3 ? "VPN RELAYS REVERSE EVERY 6S"
+                                            : "ROUTES REBALANCE // TTL TIGHT"
       readonly property real cellWidth: playfield.width / columns
       readonly property real cellHeight: playfield.height / rows
       readonly property bool tooSmall: playfield.width < 620 || playfield.height < 430
@@ -113,24 +117,32 @@ ShellRoot {
 
       function buildStage() {
         var pace = 0.72 + Math.min(stage - 1, 5) * 0.13
+        var networkKinds = stage === 1 ? ["pipe", "ssh", "container"]
+                         : stage === 2 ? ["container", "vpn", "pipe"]
+                         : stage === 3 ? ["vpn", "ssh", "vpn"]
+                         : ["ssh", "vpn", "container"]
+        var processKinds = stage === 1 ? ["service", "package", "window", "service", "package"]
+                         : stage === 2 ? ["service", "firewall", "window", "package", "service"]
+                         : stage === 3 ? ["window", "service", "firewall", "package", "window"]
+                         : ["firewall", "window", "service", "firewall", "window"]
         lanes = [
-          makeLane(2, "network", "pipe", 1, 1.12 * pace, 4, 2.7),
-          makeLane(3, "network", "ssh", -1, 1.38 * pace, 4, 2.5),
-          makeLane(4, "network", "container", 1, 0.92 * pace, 4, 2.9),
-          makeLane(6, "process", "service", -1, 1.48 * pace, 4, 1.65),
-          makeLane(7, "process", "package", 1, 1.18 * pace, 4, 1.85),
-          makeLane(8, "process", "window", -1, 1.72 * pace, 3, 2.15),
-          makeLane(9, "process", "service", 1, 1.34 * pace, 4, 1.6),
-          makeLane(10, "process", stage >= 2 ? "window" : "package", -1, 1.58 * pace, 4, 1.8)
+          makeLane(2, "network", networkKinds[0], 1, 1.12 * pace, 4, 2.7),
+          makeLane(3, "network", networkKinds[1], -1, 1.38 * pace, 4, 2.5),
+          makeLane(4, "network", networkKinds[2], 1, 0.92 * pace, 4, 2.9),
+          makeLane(6, "process", processKinds[0], -1, 1.48 * pace, 4, 1.65),
+          makeLane(7, "process", processKinds[1], 1, 1.18 * pace, 4, 1.85),
+          makeLane(8, "process", processKinds[2], -1, 1.72 * pace, 3, 2.15),
+          makeLane(9, "process", processKinds[3], 1, 1.34 * pace, 4, 1.6),
+          makeLane(10, "process", processKinds[4], -1, 1.58 * pace, 4, 1.8)
         ]
         ports = [
           { x: 1, bound: false }, { x: 4, bound: false }, { x: 7, bound: false },
           { x: 10, bound: false }, { x: 13, bound: false }
         ]
         ttlPickup = { x: 2 + Math.floor(Math.random() * 12), y: 5, active: true }
-        ttl = Math.max(28, 46 - (stage - 1) * 2)
+        ttl = Math.max(25, 48 - (stage - 1) * 4.5)
         resetCourier()
-        statusMessage = zoneName + " ROUTE TABLE LOADED"
+        statusMessage = zoneName + " // " + routeRule
         worldCanvas.requestPaint()
       }
 
@@ -353,6 +365,22 @@ ShellRoot {
         else checkSafety()
       }
 
+      function rebalanceRoutes() {
+        if (mode !== "playing" || stage < 3) return
+        var updated = []
+        for (var i = 0; i < lanes.length; i++) {
+          var source = lanes[i]
+          var shouldReverse = source.type === "network" || stage >= 4
+          updated.push({ row: source.row, type: source.type, kind: source.kind,
+                         direction: shouldReverse ? -source.direction : source.direction,
+                         speed: source.speed, items: source.items })
+        }
+        lanes = updated
+        statusMessage = stage === 3 ? "VPN ROUTE ROTATED // RELAYS REVERSING"
+                                    : "ROOT TABLE REBALANCED // ALL LANES REVERSE"
+        shell.play(ttlSound)
+      }
+
       Keys.onPressed: function(event) {
         if (event.isAutoRepeat) { event.accepted = true; return }
         if (mode === "initials") {
@@ -418,6 +446,13 @@ ShellRoot {
       }
 
       Timer {
+        interval: game.stage >= 4 ? 4800 : 6000
+        repeat: true
+        running: game.mode === "playing" && game.stage >= 3
+        onTriggered: game.rebalanceRoutes()
+      }
+
+      Timer {
         interval: 16
         repeat: true
         running: true
@@ -461,6 +496,7 @@ ShellRoot {
               anchors.verticalCenter: parent.verticalCenter
               Text { text: "OMACADE // " + shell.cabinet.shortTitle; color: theme.accent; font.pixelSize: 19; font.bold: true; font.letterSpacing: 1.4 }
               Text { text: game.zoneName + "/ROUTE/STAGE-" + ("0" + game.stage).slice(-2); color: theme.green; font.pixelSize: 11; font.family: "monospace"; font.bold: true }
+              Text { text: game.routeRule; color: theme.muted; font.pixelSize: 9; font.family: "monospace"; font.bold: true }
             }
             Repeater {
               model: [
