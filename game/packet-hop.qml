@@ -40,6 +40,7 @@ ShellRoot {
 
       readonly property int columns: 15
       readonly property int rows: 12
+      readonly property real playfieldAspect: columns / rows
       readonly property url spriteAtlas: Qt.resolvedUrl("assets/packet-hop-sprites-v2.png")
       readonly property real spriteCell: 313.5
       readonly property real spriteScale: 0.76
@@ -50,7 +51,7 @@ ShellRoot {
                                             : "ROUTES REBALANCE // TTL TIGHT"
       readonly property real cellWidth: playfield.width / columns
       readonly property real cellHeight: playfield.height / rows
-      readonly property bool tooSmall: playfield.width < 620 || playfield.height < 430
+      readonly property bool tooSmall: playfield.width < 620 || playfield.height < 496
 
       property var lanes: []
       property var ports: []
@@ -514,14 +515,19 @@ ShellRoot {
         }
 
         Item {
-          id: playfield
+          id: playfieldSlot
+          anchors.left: parent.left
+          anchors.right: parent.right
           anchors.top: hud.bottom
           anchors.bottom: footer.top
-          anchors.topMargin: 12
-          anchors.bottomMargin: 12
-          anchors.horizontalCenter: parent.horizontalCenter
-          width: Math.min(parent.width - 24, height * 1.7)
-          clip: true
+
+          Item {
+            id: playfield
+            anchors.centerIn: parent
+            width: Math.min(playfieldSlot.width - 24,
+                            (playfieldSlot.height - 24) * game.playfieldAspect)
+            height: width / game.playfieldAspect
+            clip: true
 
           Canvas {
             id: worldCanvas
@@ -742,9 +748,10 @@ ShellRoot {
               anchors.centerIn: parent
               spacing: 12
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "ROUTE GRID TOO SMALL"; color: theme.yellow; font.pixelSize: 22; font.bold: true }
-              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Enlarge the cabinet for a 620 × 430 playfield."; color: theme.foreground; font.pixelSize: 13 }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Enlarge the cabinet for a 620 × 496 playfield."; color: theme.foreground; font.pixelSize: 13 }
             }
           }
+        }
         }
 
         Rectangle {
