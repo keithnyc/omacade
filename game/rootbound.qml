@@ -44,6 +44,8 @@ ShellRoot {
       property var shards: []
       property int playerX: 16
       property int playerY: 1
+      property real playerVisualX: 16
+      property real playerVisualY: 1
       property int facingX: 0
       property int facingY: 1
       property int score: 0
@@ -56,6 +58,7 @@ ShellRoot {
       property bool rightHeld: false
       property bool upHeld: false
       property bool downHeld: false
+      property int moveInterval: 175
       property real pulseCooldown: 0
       property real pulseLife: 0
       property var pulsePath: []
@@ -126,6 +129,8 @@ ShellRoot {
         soil = generated
         playerX = startX
         playerY = 1
+        playerVisualX = playerX
+        playerVisualY = playerY
         facingX = 0
         facingY = 1
 
@@ -173,7 +178,9 @@ ShellRoot {
         if (!inside(nextX, nextY) || nextY === 0) return
         facingX = dx
         facingY = dy
-        if (isSoil(nextX, nextY)) {
+        var digging = isSoil(nextX, nextY)
+        moveInterval = digging ? 235 : 175
+        if (digging) {
           setSoil(nextX, nextY, false)
           score += 10 + stage
         }
@@ -365,7 +372,7 @@ ShellRoot {
       }
 
       Timer {
-        interval: 82
+        interval: game.moveInterval
         repeat: true
         running: game.mode === "playing" && (game.leftHeld || game.rightHeld || game.upHeld || game.downHeld)
         onTriggered: {
@@ -389,6 +396,9 @@ ShellRoot {
         running: true
         onTriggered: {
           game.animationTime += 0.033
+          var movementEase = 0.34
+          game.playerVisualX += (game.playerX - game.playerVisualX) * movementEase
+          game.playerVisualY += (game.playerY - game.playerVisualY) * movementEase
           game.pulseCooldown = Math.max(0, game.pulseCooldown - 0.033)
           game.pulseLife = Math.max(0, game.pulseLife - 0.033)
           worldCanvas.requestPaint()
@@ -524,8 +534,8 @@ ShellRoot {
               }
               context.globalAlpha = 1
 
-              var playerCenterX = (game.playerX + 0.5) * game.cellWidth
-              var playerCenterY = (game.playerY + 0.5) * game.cellHeight
+              var playerCenterX = (game.playerVisualX + 0.5) * game.cellWidth
+              var playerCenterY = (game.playerVisualY + 0.5) * game.cellHeight
               var playerRadius = Math.min(game.cellWidth, game.cellHeight) * 0.38
               context.fillStyle = theme.accent
               context.fillRect(playerCenterX - playerRadius, playerCenterY - playerRadius,

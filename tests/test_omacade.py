@@ -282,6 +282,9 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("function moveEnemies()", rootbound)
         self.assertIn("function purge()", rootbound)
         self.assertIn('cabinetId: shell.cabinet.scoreKey', rootbound)
+        self.assertIn("property int moveInterval: 175", rootbound)
+        self.assertIn("moveInterval = digging ? 235 : 175", rootbound)
+        self.assertIn("property real playerVisualX", rootbound)
 
     def test_flight_renderer_stays_inside_terminal_width(self) -> None:
         Settings = self.module["Settings"]
