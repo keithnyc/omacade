@@ -112,7 +112,7 @@ ShellRoot {
       }
 
       function buildStage() {
-        var pace = 1 + Math.min(stage - 1, 5) * 0.11
+        var pace = 0.72 + Math.min(stage - 1, 5) * 0.13
         lanes = [
           makeLane(2, "network", "pipe", 1, 1.12 * pace, 4, 2.7),
           makeLane(3, "network", "ssh", -1, 1.38 * pace, 4, 2.5),
