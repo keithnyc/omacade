@@ -63,6 +63,8 @@ ShellRoot {
       property real pulseCooldown: 0
       property real pulseLife: 0
       property var pulsePath: []
+      property var scoreBursts: []
+      property var purgeParticles: []
       property string initialsInput: ""
       property bool initialsPristine: true
       property string statusMessage: ""
@@ -98,6 +100,15 @@ ShellRoot {
           for (var x = 1; x < columns - 1; x++)
             if (!buffer[index(x, y)]) result.push({ x: x, y: y })
         return result
+      }
+
+      function daemonState(x, y, type, blink, capture, captureLife, hitFlash) {
+        return {
+          x: x, y: y, type: type, blink: blink,
+          capture: capture || 0,
+          captureLife: captureLife || 0,
+          hitFlash: hitFlash || 0
+        }
       }
 
       function generateLevel() {
@@ -142,7 +153,9 @@ ShellRoot {
         for (var enemy = 0; enemy < enemyCount && candidates.length; enemy++) {
           var choice = candidates.splice(Math.floor(Math.random() * candidates.length), 1)[0]
           if (Math.abs(choice.x - playerX) + Math.abs(choice.y - playerY) < 10) { enemy--; continue }
-          spawned.push({ x: choice.x, y: choice.y, phase: enemy >= 3 && stage >= 3, blink: Math.random() * 6.28 })
+          var rootkit = stage >= 2 && enemy >= Math.max(2, enemyCount - Math.ceil(stage / 3))
+          spawned.push(daemonState(choice.x, choice.y, rootkit ? "rootkit" : "zombie",
+                                    Math.random() * 6.28, 0, 0, 0))
         }
         enemies = spawned
 
@@ -159,6 +172,8 @@ ShellRoot {
         shards = hidden
         pulsePath = []
         pulseLife = 0
+        scoreBursts = []
+        purgeParticles = []
         statusMessage = "DEPTH " + stage + " MOUNTED"
         worldCanvas.requestPaint()
       }
@@ -225,24 +240,63 @@ ShellRoot {
 
         var survivors = []
         var purged = 0
+        var tagged = 0
         for (var i = 0; i < enemies.length; i++) {
           var hit = false
           for (var p = 0; p < path.length; p++)
             if (enemies[i].x === path[p].x && enemies[i].y === path[p].y) hit = true
-          if (hit) purged += 1
-          else survivors.push(enemies[i])
+          if (!hit) {
+            survivors.push(enemies[i])
+            continue
+          }
+
+          var nextCapture = enemies[i].capture + 1
+          if (nextCapture >= 3) {
+            purged += 1
+            var deletionScore = (enemies[i].type === "rootkit" ? 900 : 600) + stage * 100
+            score += deletionScore
+            addScoreBurst(enemies[i].x, enemies[i].y, deletionScore)
+            addPurgeBurst(enemies[i].x, enemies[i].y, enemies[i].type)
+          } else {
+            tagged += 1
+            var captureScore = nextCapture * 75
+            score += captureScore
+            addScoreBurst(enemies[i].x, enemies[i].y, captureScore)
+            survivors.push(daemonState(enemies[i].x, enemies[i].y, enemies[i].type,
+                                       enemies[i].blink, nextCapture, 2.8, 0.24))
+          }
         }
         enemies = survivors
         if (purged) {
-          score += purged * (450 + stage * 75)
-          statusMessage = "PURGED " + purged + " ROGUE DAEMON" + (purged > 1 ? "S" : "")
+          statusMessage = "SUDO PURGED " + purged + " DAEMON" + (purged > 1 ? "S" : "")
           if (!enemies.length) {
             mode = "stageclear"
             score += stage * 500
             shell.play(clearSound)
           }
+        } else if (tagged) {
+          statusMessage = "DAEMON " + (survivors.some(function(enemy) { return enemy.capture === 2 })
+                                       ? "COMPRESSED // PURGE AGAIN" : "QUARANTINED")
         }
         worldCanvas.requestPaint()
+      }
+
+      function addScoreBurst(x, y, points) {
+        var next = scoreBursts.slice(0)
+        next.push({ x: x + 0.5, y: y + 0.25, text: "+" + points, life: 0.9 })
+        scoreBursts = next
+      }
+
+      function addPurgeBurst(x, y, type) {
+        var next = purgeParticles.slice(0)
+        for (var i = 0; i < 12; i++) {
+          var angle = Math.PI * 2 * i / 12 + Math.random() * 0.2
+          var speed = 1.4 + Math.random() * 1.8
+          next.push({ x: x + 0.5, y: y + 0.5,
+                      vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+                      life: 0.55 + Math.random() * 0.22, type: type })
+        }
+        purgeParticles = next
       }
 
       function availableMoves(enemy) {
@@ -252,7 +306,7 @@ ShellRoot {
           var x = enemy.x + directions[i].x
           var y = enemy.y + directions[i].y
           if (!inside(x, y) || y === 0) continue
-          if (!isSoil(x, y) || (enemy.phase && Math.random() < 0.16))
+          if (!isSoil(x, y) || (enemy.type === "rootkit" && Math.random() < 0.2))
             options.push({ x: x, y: y })
         }
         return options
@@ -263,6 +317,7 @@ ShellRoot {
         var moved = []
         for (var i = 0; i < enemies.length; i++) {
           var enemy = enemies[i]
+          if (enemy.capture > 0) { moved.push(enemy); continue }
           var options = availableMoves(enemy)
           if (!options.length) { moved.push(enemy); continue }
           options.sort(function(a, b) {
@@ -270,8 +325,9 @@ ShellRoot {
             var distanceB = Math.abs(b.x - playerX) + Math.abs(b.y - playerY)
             return distanceA - distanceB
           })
-          var choice = Math.random() < 0.76 ? options[0] : options[Math.floor(Math.random() * options.length)]
-          moved.push({ x: choice.x, y: choice.y, phase: enemy.phase, blink: enemy.blink })
+          var huntsPlayer = enemy.type === "zombie" || Math.random() < 0.62
+          var choice = huntsPlayer ? options[0] : options[Math.floor(Math.random() * options.length)]
+          moved.push(daemonState(choice.x, choice.y, enemy.type, enemy.blink, 0, 0, 0))
         }
         enemies = moved
         checkCollision()
@@ -281,7 +337,7 @@ ShellRoot {
       function checkCollision() {
         if (mode !== "playing") return
         for (var i = 0; i < enemies.length; i++) {
-          if (enemies[i].x === playerX && enemies[i].y === playerY) {
+          if (enemies[i].capture === 0 && enemies[i].x === playerX && enemies[i].y === playerY) {
             lives -= 1
             shell.play(hitSound)
             statusMessage = "SEGFAULT // LIFE LOST"
@@ -323,6 +379,41 @@ ShellRoot {
         stage += 1
         mode = "playing"
         generateLevel()
+      }
+
+      function tickCombatEffects(dt) {
+        var thawed = []
+        for (var i = 0; i < enemies.length; i++) {
+          var enemy = enemies[i]
+          var capture = enemy.capture
+          var captureLife = Math.max(0, enemy.captureLife - dt)
+          if (capture > 0 && captureLife <= 0) {
+            capture -= 1
+            captureLife = capture > 0 ? 1.35 : 0
+          }
+          thawed.push(daemonState(enemy.x, enemy.y, enemy.type, enemy.blink,
+                                  capture, captureLife, Math.max(0, enemy.hitFlash - dt)))
+        }
+        enemies = thawed
+
+        var labels = []
+        for (var label = 0; label < scoreBursts.length; label++) {
+          var scoreBurst = scoreBursts[label]
+          if (scoreBurst.life > dt)
+            labels.push({ x: scoreBurst.x, y: scoreBurst.y - dt * 0.75,
+                          text: scoreBurst.text, life: scoreBurst.life - dt })
+        }
+        scoreBursts = labels
+
+        var particles = []
+        for (var particle = 0; particle < purgeParticles.length; particle++) {
+          var spark = purgeParticles[particle]
+          if (spark.life > dt)
+            particles.push({ x: spark.x + spark.vx * dt, y: spark.y + spark.vy * dt,
+                             vx: spark.vx * 0.94, vy: spark.vy * 0.94,
+                             life: spark.life - dt, type: spark.type })
+        }
+        purgeParticles = particles
       }
 
       Keys.onPressed: function(event) {
@@ -412,6 +503,7 @@ ShellRoot {
           game.playerVisualY += (game.playerY - game.playerVisualY) * movementEase
           game.pulseCooldown = Math.max(0, game.pulseCooldown - 0.033)
           game.pulseLife = Math.max(0, game.pulseLife - 0.033)
+          game.tickCombatEffects(0.033)
           worldCanvas.requestPaint()
         }
       }
@@ -521,24 +613,58 @@ ShellRoot {
                 context.globalAlpha = 1
               }
 
+              for (var particle = 0; particle < game.purgeParticles.length; particle++) {
+                var spark = game.purgeParticles[particle]
+                context.globalAlpha = Math.min(1, spark.life * 2)
+                context.fillStyle = spark.type === "rootkit" ? theme.orange : theme.red
+                context.fillRect(spark.x * game.cellWidth - 2, spark.y * game.cellHeight - 2, 4, 4)
+              }
+              context.globalAlpha = 1
+
               for (var enemy = 0; enemy < game.enemies.length; enemy++) {
                 var daemon = game.enemies[enemy]
                 var ex = (daemon.x + 0.5) * game.cellWidth
                 var ey = (daemon.y + 0.5) * game.cellHeight
-                var radius = Math.min(game.cellWidth, game.cellHeight) * 0.35
-                context.globalAlpha = daemon.phase ? 0.52 + Math.sin(game.animationTime * 5 + daemon.blink) * 0.24 : 1
-                context.fillStyle = daemon.phase ? theme.orange : theme.red
+                var baseRadius = Math.min(game.cellWidth, game.cellHeight) * 0.35
+                var capturePulse = daemon.capture > 0 ? Math.sin(game.animationTime * 8 + daemon.blink) * 0.04 : 0
+                var radius = baseRadius * (1 + daemon.capture * 0.22 + capturePulse)
+                var rootkit = daemon.type === "rootkit"
+                context.globalAlpha = rootkit && daemon.capture === 0
+                    ? 0.56 + Math.sin(game.animationTime * 5 + daemon.blink) * 0.22 : 1
+                context.fillStyle = daemon.hitFlash > 0 ? theme.foreground
+                                  : daemon.capture === 2 ? theme.yellow
+                                  : daemon.capture === 1 ? theme.accent
+                                  : rootkit ? theme.orange : theme.red
                 context.beginPath()
-                context.moveTo(ex - radius, ey - radius * 0.55)
-                context.lineTo(ex - radius * 0.55, ey - radius * 1.15)
-                context.lineTo(ex - radius * 0.15, ey - radius * 0.62)
-                context.lineTo(ex + radius * 0.15, ey - radius * 0.62)
-                context.lineTo(ex + radius * 0.55, ey - radius * 1.15)
-                context.lineTo(ex + radius, ey - radius * 0.55)
-                context.lineTo(ex + radius * 0.72, ey + radius)
-                context.lineTo(ex - radius * 0.72, ey + radius)
+                if (rootkit) {
+                  context.moveTo(ex, ey - radius * 1.18)
+                  context.lineTo(ex + radius, ey - radius * 0.25)
+                  context.lineTo(ex + radius * 0.7, ey + radius)
+                  context.lineTo(ex, ey + radius * 0.62)
+                  context.lineTo(ex - radius * 0.7, ey + radius)
+                  context.lineTo(ex - radius, ey - radius * 0.25)
+                } else {
+                  context.moveTo(ex - radius, ey - radius * 0.55)
+                  context.lineTo(ex - radius * 0.55, ey - radius * 1.15)
+                  context.lineTo(ex - radius * 0.15, ey - radius * 0.62)
+                  context.lineTo(ex + radius * 0.15, ey - radius * 0.62)
+                  context.lineTo(ex + radius * 0.55, ey - radius * 1.15)
+                  context.lineTo(ex + radius, ey - radius * 0.55)
+                  context.lineTo(ex + radius * 0.72, ey + radius)
+                  context.lineTo(ex - radius * 0.72, ey + radius)
+                }
                 context.closePath()
                 context.fill()
+
+                if (daemon.capture > 0) {
+                  context.globalAlpha = 0.68 + Math.sin(game.animationTime * 9) * 0.18
+                  context.strokeStyle = daemon.capture === 2 ? theme.yellow : theme.accent
+                  context.lineWidth = 2 + daemon.capture
+                  context.beginPath()
+                  context.arc(ex, ey, radius * 1.16, 0, Math.PI * 2)
+                  context.stroke()
+                }
+                context.globalAlpha = 1
                 context.fillStyle = theme.background
                 context.fillRect(ex - radius * 0.48, ey - radius * 0.26, radius * 0.25, radius * 0.25)
                 context.fillRect(ex + radius * 0.23, ey - radius * 0.26, radius * 0.25, radius * 0.25)
@@ -564,6 +690,39 @@ ShellRoot {
                              playerCenterY - game.facingX * playerRadius * 0.42)
               context.closePath()
               context.fill()
+
+              context.font = "bold " + Math.max(11, Math.floor(game.cellHeight * 0.55)) + "px monospace"
+              context.textAlign = "center"
+              for (var burst = 0; burst < game.scoreBursts.length; burst++) {
+                var label = game.scoreBursts[burst]
+                context.globalAlpha = Math.min(1, label.life * 2)
+                context.fillStyle = theme.yellow
+                context.fillText(label.text, label.x * game.cellWidth, label.y * game.cellHeight)
+              }
+              context.globalAlpha = 1
+            }
+          }
+
+          Rectangle {
+            visible: game.mode === "playing" && game.statusMessage.length > 0
+            anchors.top: parent.top
+            anchors.right: parent.right
+            anchors.margins: 10
+            width: Math.min(parent.width - 20, statusText.implicitWidth + 24)
+            height: 30
+            radius: 5
+            color: theme.surface
+            border.color: theme.muted
+            border.width: 1
+            opacity: 0.9
+            Text {
+              id: statusText
+              anchors.centerIn: parent
+              text: game.statusMessage
+              color: theme.foreground
+              font.pixelSize: 11
+              font.family: "monospace"
+              font.bold: true
             }
           }
 
@@ -584,7 +743,8 @@ ShellRoot {
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: shell.cabinet.displayTitle; color: theme.foreground; font.pixelSize: 39; font.bold: true; font.letterSpacing: 4 }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: shell.cabinet.tagline.toUpperCase(); color: theme.green; font.pixelSize: 13; font.family: "monospace" }
               Rectangle { width: parent.width; height: 1; color: theme.muted }
-              Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; text: "CARVE THROUGH THE FILESYSTEM. RECOVER PACKAGE SHARDS.\nPURGE EVERY ROGUE DAEMON BEFORE IT FINDS ROOT."; color: theme.foreground; font.pixelSize: 14; font.family: "monospace"; lineHeight: 1.35 }
+              Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; text: "CARVE THROUGH THE FILESYSTEM. RECOVER PACKAGE SHARDS.\nQUARANTINE, COMPRESS, THEN PURGE EVERY ROGUE DAEMON."; color: theme.foreground; font.pixelSize: 14; font.family: "monospace"; lineHeight: 1.35 }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "ZOMBIE: HUNTS TUNNELS   ·   ROOTKIT: PHASES SOIL"; color: theme.orange; font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "← ↑ ↓ →  DIG / MOVE    ·    SPACE  SUDO PURGE"; color: theme.muted; font.pixelSize: 12; font.family: "monospace" }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "BEST " + arcadeData.bestScore + "   ·   DEEPEST " + arcadeData.highestStage; color: theme.yellow; font.pixelSize: 13; font.family: "monospace"; font.bold: true }
               Text {

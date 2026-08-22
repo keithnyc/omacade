@@ -140,8 +140,10 @@ omarchy plugin remove io.github.keithnyc.omacade
 
 ## Roadmap
 
-Cabinet 02, Rootbound, now has its first playable vertical slice. Next work is
-gameplay tuning, original sound design, enemy variety, and richer stage goals.
+Cabinet 02, Rootbound, has its first playable combat loop: tunnel-hunting zombie
+processes, soil-phasing rootkits, and a three-step quarantine/compress/purge
+system. Next work is original sound design, richer stage goals, and additional
+daemon behaviors.
 
 ## License
 
