@@ -339,6 +339,9 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("readonly property real playfieldAspect: columns / rows", packet_hop)
         self.assertIn("(playfieldSlot.height - 24) * game.playfieldAspect", packet_hop)
         self.assertIn("height: width / game.playfieldAspect", packet_hop)
+        self.assertIn('text: "// INGRESS"', packet_hop)
+        self.assertIn('text: "EGRESS //"', packet_hop)
+        self.assertIn('text: "ROOT PORTS"', packet_hop)
         self.assertIn("var flowPhase = game.animationTime * flow.speed * flow.direction * 1.45", packet_hop)
         self.assertIn("anchors.topMargin: game.cellHeight + 8", packet_hop)
 

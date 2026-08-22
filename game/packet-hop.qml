@@ -521,6 +521,91 @@ ShellRoot {
           anchors.top: hud.bottom
           anchors.bottom: footer.top
 
+          Rectangle {
+            id: ingressRail
+            visible: width >= 150
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.margins: 12
+            width: Math.max(0, (parent.width - playfield.width) / 2 - 24)
+            color: theme.surface
+            border.color: theme.muted
+            border.width: 1
+
+            Rectangle { anchors.top: parent.top; anchors.bottom: parent.bottom; anchors.right: parent.right; width: 2; color: theme.accent; opacity: 0.5 }
+            Column {
+              anchors.centerIn: parent
+              width: parent.width - 28
+              spacing: 16
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "// INGRESS"; color: theme.accent; font.pixelSize: 13; font.family: "monospace"; font.bold: true; font.letterSpacing: 2 }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: game.zoneName; color: theme.green; font.pixelSize: 21; font.family: "monospace"; font.bold: true }
+              Rectangle { width: parent.width; height: 1; color: theme.muted }
+              Repeater {
+                model: 8
+                delegate: Row {
+                  required property int index
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  spacing: 10
+                  Rectangle {
+                    width: 8; height: 8; radius: 4
+                    color: index < game.lanes.length && game.lanes[index].type === "network" ? theme.accent : theme.orange
+                    opacity: 0.45 + ((index + Math.floor(game.animationTime * 3)) % 3) * 0.2
+                  }
+                  Text {
+                    text: index < game.lanes.length
+                          ? (game.lanes[index].direction > 0 ? "RX  →" : "←  TX") + "  L" + game.lanes[index].row
+                          : "--"
+                    color: theme.muted; font.pixelSize: 10; font.family: "monospace"; font.bold: true
+                  }
+                }
+              }
+              Rectangle { width: parent.width; height: 1; color: theme.muted }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "STACK ONLINE"; color: theme.foreground; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+            }
+          }
+
+          Rectangle {
+            id: egressRail
+            visible: width >= 150
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.margins: 12
+            width: Math.max(0, (parent.width - playfield.width) / 2 - 24)
+            color: theme.surface
+            border.color: theme.muted
+            border.width: 1
+
+            Rectangle { anchors.top: parent.top; anchors.bottom: parent.bottom; anchors.left: parent.left; width: 2; color: theme.green; opacity: 0.5 }
+            Column {
+              anchors.centerIn: parent
+              width: parent.width - 28
+              spacing: 16
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "EGRESS //"; color: theme.green; font.pixelSize: 13; font.family: "monospace"; font.bold: true; font.letterSpacing: 2 }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "ROOT PORTS"; color: theme.foreground; font.pixelSize: 15; font.family: "monospace"; font.bold: true }
+              Rectangle { width: parent.width; height: 1; color: theme.muted }
+              Repeater {
+                model: 5
+                delegate: Row {
+                  required property int index
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  spacing: 10
+                  Text { text: "0" + (index + 1); color: theme.muted; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+                  Rectangle {
+                    width: 34; height: 8; radius: 4
+                    color: index < game.ports.length && game.ports[index].bound ? theme.green : theme.surfaceRaised
+                    border.color: index < game.ports.length && game.ports[index].bound ? theme.green : theme.muted
+                    border.width: 1
+                  }
+                }
+              }
+              Rectangle { width: parent.width; height: 1; color: theme.muted }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "TTL  " + Math.ceil(game.ttl); color: game.ttl < 10 ? theme.red : theme.yellow; font.pixelSize: 18; font.family: "monospace"; font.bold: true }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "ROUTE TABLE // " + game.stage; color: theme.muted; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+            }
+          }
+
           Item {
             id: playfield
             anchors.centerIn: parent
