@@ -3,7 +3,8 @@
 **Insert no coins.** Omacade is a modular, theme-aware arcade for
 [Omarchy](https://omarchy.org/). Version 0.1 includes polished Cabinet 01,
 **Lander**, the filesystem action game **Rootbound**, and the network-crossing
-Cabinet 03 vertical slice, **Packet Hop**.
+Cabinet 03, **Packet Hop**. A shared arcade-floor lobby tracks one local pilot
+profile, cabinet records, session recaps, and achievements across all three.
 
 Lander is an original graphical game inspired by the broad lunar-landing genre.
 Rotate, manage a limited fuel supply, and settle both feet onto a marked pad.
@@ -117,7 +118,10 @@ or the terminal fallback with `./omacade/omacade lander`.
 live in `game/framework/CabinetRegistry.js`; reusable theme and persistence
 services live beside it. Each game runs as an isolated Quickshell process, so
 adding a cabinet does not enlarge the Omarchy bar widget or couple its game
-loop to Lander. See `game/framework/README.md` for the cabinet contract.
+loop to Lander. The lobby presents all cabinets at once, supports direct pilot
+initial editing with `I`, and refreshes personal-best, stage, run-count,
+achievement, and last-session data whenever a cabinet closes. See
+`game/framework/README.md` for the cabinet contract.
 
 Validate the repository with Omarchy's own validator:
 
