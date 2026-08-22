@@ -81,6 +81,7 @@ ShellRoot {
     if (!run || run.score === undefined) return "NO SESSION DATA"
     if (cabinetId === "lander") return "FUEL " + Number(run.fuel || 0).toFixed(1) + "  //  FLIGHT " + Number(run.time || 0).toFixed(1) + "S"
     if (cabinetId === "rootbound") return "PACKAGES " + Number(run.packages || 0) + "  //  DEPTH " + Math.max(1, Number(run.stage || 1))
+    if (cabinetId === "core-command") return "PERFECT WAVES " + Number(run.perfectWaves || 0) + "  //  CHAIN x" + Math.max(1, Number(run.maxChain || 1))
     return "PORTS " + Number(run.ports || 0) + "  //  TTL " + Math.ceil(Number(run.ttl || 0))
   }
 
@@ -247,7 +248,7 @@ ShellRoot {
               }
               Text {
                 anchors.right: parent.right
-                text: arcadeData.totalRuns + " RUNS  //  " + arcadeData.achievementCount() + "/5 BADGES"
+                text: arcadeData.totalRuns + " RUNS  //  " + arcadeData.achievementCount() + "/" + arcadeData.achievementDefinitions.length + " BADGES"
                 color: theme.yellow
                 font.pixelSize: 10
                 font.family: "monospace"
@@ -362,29 +363,35 @@ ShellRoot {
                   Item { width: Math.max(8, parent.width - profileTitle.implicitWidth - profileEdit.implicitWidth); height: 1 }
                   Text { id: profileEdit; text: "I  EDIT"; color: theme.muted; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
                 }
-                Text { text: arcadeData.totalRuns + " TOTAL RUNS  ·  " + arcadeData.achievementCount() + "/5 UNLOCKED"; color: theme.yellow; font.pixelSize: 11; font.family: "monospace"; font.bold: true }
+                Text { text: arcadeData.totalRuns + " TOTAL RUNS  ·  " + arcadeData.achievementCount() + "/" + arcadeData.achievementDefinitions.length + " UNLOCKED"; color: theme.yellow; font.pixelSize: 11; font.family: "monospace"; font.bold: true }
                 Rectangle { width: parent.width; height: 1; color: theme.muted; opacity: 0.6 }
                 Text { text: "ACHIEVEMENTS"; color: theme.foreground; font.pixelSize: 11; font.family: "monospace"; font.bold: true; font.letterSpacing: 1.4 }
-                Repeater {
-                  model: arcadeData.achievementDefinitions
-                  delegate: Rectangle {
-                    required property var modelData
-                    width: parent.width
-                    height: 37
-                    radius: 5
-                    color: arcadeData.achievementUnlocked(modelData.id) ? theme.surfaceRaised : theme.background
-                    border.color: arcadeData.achievementUnlocked(modelData.id) ? theme.green : theme.muted
-                    border.width: 1
-                    opacity: arcadeData.achievementUnlocked(modelData.id) ? 1 : 0.56
-                    Row {
-                      anchors.fill: parent
-                      anchors.margins: 7
-                      spacing: 10
-                      Text { text: arcadeData.achievementUnlocked(modelData.id) ? "◆" : "◇"; color: arcadeData.achievementUnlocked(modelData.id) ? theme.green : theme.muted; font.pixelSize: 14 }
-                      Column {
-                        width: parent.width - 30
-                        Text { text: modelData.title; color: arcadeData.achievementUnlocked(modelData.id) ? theme.green : theme.foreground; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
-                        Text { width: parent.width; text: modelData.detail; color: theme.muted; font.pixelSize: 8; font.family: "monospace"; elide: Text.ElideRight }
+                Grid {
+                  id: achievementGrid
+                  width: parent.width
+                  columns: 2
+                  spacing: 6
+                  Repeater {
+                    model: arcadeData.achievementDefinitions
+                    delegate: Rectangle {
+                      required property var modelData
+                      width: (achievementGrid.width - achievementGrid.spacing) / 2
+                      height: 44
+                      radius: 5
+                      color: arcadeData.achievementUnlocked(modelData.id) ? theme.surfaceRaised : theme.background
+                      border.color: arcadeData.achievementUnlocked(modelData.id) ? theme.green : theme.muted
+                      border.width: 1
+                      opacity: arcadeData.achievementUnlocked(modelData.id) ? 1 : 0.56
+                      Row {
+                        anchors.fill: parent
+                        anchors.margins: 7
+                        spacing: 8
+                        Text { text: arcadeData.achievementUnlocked(modelData.id) ? "◆" : "◇"; color: arcadeData.achievementUnlocked(modelData.id) ? theme.green : theme.muted; font.pixelSize: 13 }
+                        Column {
+                          width: parent.width - 27
+                          Text { width: parent.width; text: modelData.title; color: arcadeData.achievementUnlocked(modelData.id) ? theme.green : theme.foreground; font.pixelSize: 9; font.family: "monospace"; font.bold: true; elide: Text.ElideRight }
+                          Text { width: parent.width; text: modelData.detail; color: theme.muted; font.pixelSize: 7; font.family: "monospace"; elide: Text.ElideRight }
+                        }
                       }
                     }
                   }

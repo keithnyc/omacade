@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "author": "Keith",
   "license": "MIT",
-  "description": "A modular, theme-aware arcade for Omarchy. Cabinet 01: Lander.",
+  "description": "A modular, theme-aware four-cabinet arcade for Omarchy.",
   "kinds": [
     "bar-widget"
   ],

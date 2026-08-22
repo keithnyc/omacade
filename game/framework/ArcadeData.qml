@@ -27,7 +27,9 @@ Item {
     { id: "soft-landing", title: "SOFT LANDING", detail: "Land with at least 20 fuel remaining." },
     { id: "root-access", title: "ROOT ACCESS", detail: "Reach Stage 4 in Rootbound." },
     { id: "route-locked", title: "ROUTE LOCKED", detail: "Bind five ports in one Packet Hop run." },
-    { id: "triple-threat", title: "TRIPLE THREAT", detail: "Record a run on all three cabinets." }
+    { id: "triple-threat", title: "TRIPLE THREAT", detail: "Record a run on the first three cabinets." },
+    { id: "core-shield", title: "CORE SHIELD", detail: "Clear a wave with all six services online." },
+    { id: "full-stack", title: "FULL STACK", detail: "Record a run on all four cabinets." }
   ]
 
   function cleanInitials(value) {
@@ -136,6 +138,12 @@ Item {
     if (completedCount(data, "lander") > 0 && completedCount(data, "rootbound") > 0
         && completedCount(data, "packet-hop") > 0 && !earned["triple-threat"])
       earned["triple-threat"] = historical
+    if (anyRowMatches(data, "core-command", function(row) { return Number(row.perfectWaves || 0) > 0 }) && !earned["core-shield"])
+      earned["core-shield"] = historical
+    if (completedCount(data, "lander") > 0 && completedCount(data, "rootbound") > 0
+        && completedCount(data, "packet-hop") > 0 && completedCount(data, "core-command") > 0
+        && !earned["full-stack"])
+      earned["full-stack"] = historical
     return earned
   }
 
@@ -157,6 +165,11 @@ Item {
     unlock("triple-threat", completedCount(data, "lander") > 0
                              && completedCount(data, "rootbound") > 0
                              && completedCount(data, "packet-hop") > 0)
+    unlock("core-shield", cabinetId === "core-command" && Number(row.perfectWaves || 0) > 0)
+    unlock("full-stack", completedCount(data, "lander") > 0
+                          && completedCount(data, "rootbound") > 0
+                          && completedCount(data, "packet-hop") > 0
+                          && completedCount(data, "core-command") > 0)
     data.achievements = earned
     return unlocked
   }

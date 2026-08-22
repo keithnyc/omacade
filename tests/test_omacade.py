@@ -267,6 +267,8 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn('entry: "rootbound.qml"', registry)
         self.assertIn('id: "packet-hop"', registry)
         self.assertIn('entry: "packet-hop.qml"', registry)
+        self.assertIn('id: "core-command"', registry)
+        self.assertIn('entry: "core-command.qml"', registry)
         self.assertIn("function recordScore(entry)", runtime)
         self.assertIn("property var lastRun", runtime)
         self.assertIn("achievementDefinitions", runtime)
@@ -274,7 +276,7 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("function achievementUnlocked(id)", runtime)
         self.assertIn("row.newBest =", runtime)
         self.assertIn("data.lastRuns[cabinetId] = row", runtime)
-        for achievement in ("first-boot", "soft-landing", "root-access", "route-locked", "triple-threat"):
+        for achievement in ("first-boot", "soft-landing", "root-access", "route-locked", "triple-threat", "core-shield", "full-stack"):
             self.assertIn(f'id: "{achievement}"', runtime)
         self.assertIn("property color accent", theme)
         self.assertIn("CabinetRegistry.cabinets", lobby)
@@ -290,6 +292,7 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn('lander) target="$root/game/shell.qml"', launcher)
         self.assertIn('rootbound) target="$root/game/rootbound.qml"', launcher)
         self.assertIn('packet-hop|packethop) target="$root/game/packet-hop.qml"', launcher)
+        self.assertIn('core-command|corecommand) target="$root/game/core-command.qml"', launcher)
         self.assertIn("Exec=omarchy-launch-or-focus Omacade omacade-gui", desktop)
         self.assertIn('CabinetRegistry.byId("lander")', lander)
         self.assertIn("ArcadeData { id: arcadeData", lander)
@@ -389,6 +392,27 @@ class OmacadeTests(unittest.TestCase):
         self.assertEqual(int.from_bytes(packet_sprite[20:24], "big"), 1254)
         for effect in ("hop", "bind", "drop", "stage", "ttl"):
             wav = (ROOT / "game" / "assets" / "sfx" / f"packet-{effect}.wav").read_bytes()
+            self.assertEqual(wav[:4], b"RIFF")
+            self.assertEqual(wav[8:12], b"WAVE")
+
+        core_command = (ROOT / "game" / "core-command.qml").read_text(encoding="utf-8")
+        self.assertIn('CabinetRegistry.byId("core-command")', core_command)
+        self.assertIn("function spawnThreat(", core_command)
+        self.assertIn("function fireAt(x, y)", core_command)
+        self.assertIn("function explosionRadius(blast)", core_command)
+        self.assertIn("function updateThreats(dt)", core_command)
+        self.assertIn("function splitFork(threat, children)", core_command)
+        self.assertIn('type === "rootkit"', core_command)
+        self.assertIn('type === "stealth"', core_command)
+        self.assertIn('type === "fork"', core_command)
+        self.assertIn('difficulty: "core"', core_command)
+        self.assertIn("property int perfectWaves", core_command)
+        self.assertIn("if (onlineServices === services.length) perfectWaves += 1", core_command)
+        self.assertIn("maxChain: maxChain, perfectWaves: perfectWaves", core_command)
+        self.assertIn('text: "CORE//COMMAND // TOP TEN"', core_command)
+        self.assertIn('statusMessage = "THREAT SALVO // CHAIN WINDOW OPEN"', core_command)
+        for effect in ("launch", "blast", "impact", "wave"):
+            wav = (ROOT / "game" / "assets" / "sfx" / f"core-{effect}.wav").read_bytes()
             self.assertEqual(wav[:4], b"RIFF")
             self.assertEqual(wav[8:12], b"WAVE")
 

@@ -45,6 +45,21 @@ var cabinets = [
     accent: "accent",
     status: "ready",
     controls: "← ↑ ↓ → HOP / ROUTE"
+  },
+  {
+    id: "core-command",
+    number: "04",
+    title: "Core Command",
+    displayTitle: "C O R E // C O M M A N D",
+    shortTitle: "CORE//COMMAND",
+    windowTitle: "Omacade Core Command",
+    tagline: "Protect the stack. Detonate the threat.",
+    description: "Defend critical services with expanding quarantine fields and cascading chain reactions.",
+    entry: "core-command.qml",
+    scoreKey: "core-command",
+    accent: "red",
+    status: "ready",
+    controls: "MOUSE / ARROWS AIM   ·   CLICK / SPACE FIRE"
   }
 ]
 

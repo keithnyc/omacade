@@ -135,3 +135,8 @@ These are also original FFmpeg-synthesized waveforms with no sampled material.
 
 Packet Hop's original `packet-*.wav` set covers hopping, binding, drops, stage
 transitions, and TTL pickups using the same no-samples synthesis approach.
+
+Core Command's original `core-*.wav` set gives firewall launch, quarantine
+blast, payload impact, and wave-clear events their own synthesized signal and
+noise textures. Like the other cabinet effects, they contain no sampled or
+third-party audio.

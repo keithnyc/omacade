@@ -23,9 +23,10 @@ memory so historical runs immediately receive any achievements they satisfy.
 
 The shared achievements currently cover first completion, a fuel-efficient
 landing, reaching Rootbound's `/ROOT` zone, binding five Packet Hop ports in one
-run, and recording a run on every cabinet. New cabinets may add fields to their
-score row and extend `ArcadeData.evaluateAchievements()` without changing the
-launcher contract.
+run, clearing Core Command with every service online, and recording runs across
+the original trio and the full four-cabinet stack. New cabinets may add fields
+to their score row and extend `ArcadeData.evaluateAchievements()` without
+changing the launcher contract.
 
 Each cabinet remains responsible for its own physics, rendering, input,
 cabinet-specific settings, and sound assets. Closing it returns control to the

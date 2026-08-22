@@ -3,8 +3,10 @@
 **Insert no coins.** Omacade is a modular, theme-aware arcade for
 [Omarchy](https://omarchy.org/). Version 0.1 includes polished Cabinet 01,
 **Lander**, the filesystem action game **Rootbound**, and the network-crossing
-Cabinet 03, **Packet Hop**. A shared arcade-floor lobby tracks one local pilot
-profile, cabinet records, session recaps, and achievements across all three.
+Cabinet 03, **Packet Hop**. Cabinet 04, **Core Command**, completes the v1 floor
+with quarantine-field defense and cascading threat interception. A shared
+arcade-floor lobby tracks one local pilot profile, cabinet records, session
+recaps, and achievements across all four.
 
 Lander is an original graphical game inspired by the broad lunar-landing genre.
 Rotate, manage a limited fuel supply, and settle both feet onto a marked pad.
@@ -98,6 +100,12 @@ Packet Hop can be launched directly with:
 omacade-gui packet-hop
 ```
 
+Core Command can be launched directly with:
+
+```sh
+omacade-gui core-command
+```
+
 ## Local development
 
 From the parent directory of this checkout, link it under its manifest ID:
@@ -168,7 +176,9 @@ burst-traffic surges, and single-lane route flaps. A dedicated HUD signal module
 countdown warnings, affected-lane callouts, and active-state graphics explain
 each event without asking the player to memorize it. Near-miss bonuses, courier
 trails, and SYN/ACK port-binding bursts reinforce the route behaviors. Next work
-is cabinet-wide polish and additional hazards.
+is Cabinet 04, Core Command: six critical services, three limited firewall
+batteries, expanding quarantine fields, chain reactions, wave bonuses, and
+progressively nastier exploits, fork bombs, stealth payloads, and rootkits.
 
 ## License
 
