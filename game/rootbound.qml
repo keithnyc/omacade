@@ -65,7 +65,13 @@ ShellRoot {
       property bool rightHeld: false
       property bool upHeld: false
       property bool downHeld: false
-      property int moveInterval: 175
+      property bool purgeHeld: false
+      property int moveIntentX: 0
+      property int moveIntentY: 0
+      property int pendingMoveX: 0
+      property int pendingMoveY: 0
+      property double pendingMoveUntil: 0
+      property int moveInterval: 145
       property double lastMoveAt: -10000
       property real pulseCooldown: 0
       property real pulseLife: 0
@@ -189,6 +195,12 @@ ShellRoot {
         facingX = 0
         facingY = 1
         lastMoveAt = -10000
+        moveIntentX = 0
+        moveIntentY = 0
+        pendingMoveX = 0
+        pendingMoveY = 0
+        pendingMoveUntil = 0
+        purgeHeld = false
 
         var candidates = openCells(generated)
         var spawned = []
@@ -240,8 +252,8 @@ ShellRoot {
         facingX = dx
         facingY = dy
         var digging = isSoil(nextX, nextY)
-        var digIntervals = [225, 240, 200, 255]
-        moveInterval = digging ? digIntervals[zoneIndex] : 175
+        var digIntervals = [185, 200, 170, 215]
+        moveInterval = digging ? digIntervals[zoneIndex] : 145
         if (digging) {
           setSoil(nextX, nextY, false)
           score += 10 + stage
@@ -265,14 +277,53 @@ ShellRoot {
 
       function requestMove(dx, dy) {
         var now = Date.now()
-        if (now - lastMoveAt < moveInterval) return
+        if (now - lastMoveAt < moveInterval) {
+          pendingMoveX = dx
+          pendingMoveY = dy
+          pendingMoveUntil = now + 190
+          return
+        }
+        pendingMoveX = 0
+        pendingMoveY = 0
+        pendingMoveUntil = 0
         if (movePlayer(dx, dy)) lastMoveAt = now
+      }
+
+      function flushPendingMove() {
+        if (pendingMoveX === 0 && pendingMoveY === 0) return
+        var now = Date.now()
+        if (now > pendingMoveUntil) {
+          pendingMoveX = 0
+          pendingMoveY = 0
+          return
+        }
+        if (now - lastMoveAt < moveInterval) return
+        var dx = pendingMoveX
+        var dy = pendingMoveY
+        pendingMoveX = 0
+        pendingMoveY = 0
+        pendingMoveUntil = 0
+        if (movePlayer(dx, dy)) lastMoveAt = now
+      }
+
+      function setMoveIntent(dx, dy) {
+        moveIntentX = dx
+        moveIntentY = dy
+        requestMove(dx, dy)
+      }
+
+      function refreshMoveIntent() {
+        if (leftHeld) { moveIntentX = -1; moveIntentY = 0 }
+        else if (rightHeld) { moveIntentX = 1; moveIntentY = 0 }
+        else if (upHeld) { moveIntentX = 0; moveIntentY = -1 }
+        else if (downHeld) { moveIntentX = 0; moveIntentY = 1 }
+        else { moveIntentX = 0; moveIntentY = 0 }
       }
 
       function purge() {
         if (mode !== "playing" || pulseCooldown > 0) return
-        pulseCooldown = 0.72
-        pulseLife = 0.18
+        pulseCooldown = 0.36
+        pulseLife = 0.14
         var path = []
         for (var distance = 1; distance <= 3; distance++) {
           var x = playerX + facingX * distance
@@ -395,6 +446,7 @@ ShellRoot {
 
       function finishRun() {
         leftHeld = rightHeld = upHeld = downHeld = false
+        purgeHeld = false
         if (arcadeData.qualifies(score)) {
           initialsInput = arcadeData.defaultInitials
           initialsPristine = true
@@ -497,11 +549,11 @@ ShellRoot {
           event.accepted = true
           return
         }
-        if (event.key === Qt.Key_Left || event.key === Qt.Key_A) { leftHeld = true; requestMove(-1, 0) }
-        else if (event.key === Qt.Key_Right || event.key === Qt.Key_D) { rightHeld = true; requestMove(1, 0) }
-        else if (event.key === Qt.Key_Up || event.key === Qt.Key_W) { upHeld = true; requestMove(0, -1) }
-        else if (event.key === Qt.Key_Down || event.key === Qt.Key_S) { downHeld = true; requestMove(0, 1) }
-        else if (event.key === Qt.Key_Space) purge()
+        if (event.key === Qt.Key_Left || event.key === Qt.Key_A) { leftHeld = true; setMoveIntent(-1, 0) }
+        else if (event.key === Qt.Key_Right || event.key === Qt.Key_D) { rightHeld = true; setMoveIntent(1, 0) }
+        else if (event.key === Qt.Key_Up || event.key === Qt.Key_W) { upHeld = true; setMoveIntent(0, -1) }
+        else if (event.key === Qt.Key_Down || event.key === Qt.Key_S) { downHeld = true; setMoveIntent(0, 1) }
+        else if (event.key === Qt.Key_Space) { purgeHeld = true; purge() }
         else if (event.key === Qt.Key_P) mode = mode === "paused" ? "playing" : "paused"
         else if (event.key === Qt.Key_H) openScores()
         else if (event.key === Qt.Key_R) startRun()
@@ -511,10 +563,11 @@ ShellRoot {
 
       Keys.onReleased: function(event) {
         if (event.isAutoRepeat) { event.accepted = true; return }
-        if (event.key === Qt.Key_Left || event.key === Qt.Key_A) leftHeld = false
-        else if (event.key === Qt.Key_Right || event.key === Qt.Key_D) rightHeld = false
-        else if (event.key === Qt.Key_Up || event.key === Qt.Key_W) upHeld = false
-        else if (event.key === Qt.Key_Down || event.key === Qt.Key_S) downHeld = false
+        if (event.key === Qt.Key_Left || event.key === Qt.Key_A) { leftHeld = false; refreshMoveIntent() }
+        else if (event.key === Qt.Key_Right || event.key === Qt.Key_D) { rightHeld = false; refreshMoveIntent() }
+        else if (event.key === Qt.Key_Up || event.key === Qt.Key_W) { upHeld = false; refreshMoveIntent() }
+        else if (event.key === Qt.Key_Down || event.key === Qt.Key_S) { downHeld = false; refreshMoveIntent() }
+        else if (event.key === Qt.Key_Space) purgeHeld = false
         event.accepted = true
       }
 
@@ -522,12 +575,8 @@ ShellRoot {
         interval: game.moveInterval
         repeat: true
         running: game.mode === "playing" && (game.leftHeld || game.rightHeld || game.upHeld || game.downHeld)
-        onTriggered: {
-          if (game.leftHeld) game.requestMove(-1, 0)
-          else if (game.rightHeld) game.requestMove(1, 0)
-          else if (game.upHeld) game.requestMove(0, -1)
-          else if (game.downHeld) game.requestMove(0, 1)
-        }
+        onTriggered: if (game.moveIntentX !== 0 || game.moveIntentY !== 0)
+          game.requestMove(game.moveIntentX, game.moveIntentY)
       }
 
       Timer {
@@ -538,17 +587,19 @@ ShellRoot {
       }
 
       Timer {
-        interval: 33
+        interval: 16
         repeat: true
         running: true
         onTriggered: {
-          game.animationTime += 0.033
-          var movementEase = 0.34
+          game.animationTime += 0.016
+          var movementEase = 0.22
           game.playerVisualX += (game.playerX - game.playerVisualX) * movementEase
           game.playerVisualY += (game.playerY - game.playerVisualY) * movementEase
-          game.pulseCooldown = Math.max(0, game.pulseCooldown - 0.033)
-          game.pulseLife = Math.max(0, game.pulseLife - 0.033)
-          game.tickCombatEffects(0.033)
+          game.pulseCooldown = Math.max(0, game.pulseCooldown - 0.016)
+          game.pulseLife = Math.max(0, game.pulseLife - 0.016)
+          game.flushPendingMove()
+          if (game.purgeHeld && game.pulseCooldown <= 0) game.purge()
+          game.tickCombatEffects(0.016)
           worldCanvas.requestPaint()
         }
       }
