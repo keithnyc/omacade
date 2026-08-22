@@ -59,6 +59,7 @@ ShellRoot {
       property bool upHeld: false
       property bool downHeld: false
       property int moveInterval: 175
+      property double lastMoveAt: -10000
       property real pulseCooldown: 0
       property real pulseLife: 0
       property var pulsePath: []
@@ -133,6 +134,7 @@ ShellRoot {
         playerVisualY = playerY
         facingX = 0
         facingY = 1
+        lastMoveAt = -10000
 
         var candidates = openCells(generated)
         var spawned = []
@@ -172,10 +174,10 @@ ShellRoot {
       }
 
       function movePlayer(dx, dy) {
-        if (mode !== "playing") return
+        if (mode !== "playing") return false
         var nextX = playerX + dx
         var nextY = playerY + dy
-        if (!inside(nextX, nextY) || nextY === 0) return
+        if (!inside(nextX, nextY) || nextY === 0) return false
         facingX = dx
         facingY = dy
         var digging = isSoil(nextX, nextY)
@@ -198,6 +200,13 @@ ShellRoot {
         shards = remaining
         checkCollision()
         worldCanvas.requestPaint()
+        return true
+      }
+
+      function requestMove(dx, dy) {
+        var now = Date.now()
+        if (now - lastMoveAt < moveInterval) return
+        if (movePlayer(dx, dy)) lastMoveAt = now
       }
 
       function purge() {
@@ -352,10 +361,10 @@ ShellRoot {
           event.accepted = true
           return
         }
-        if (event.key === Qt.Key_Left || event.key === Qt.Key_A) { leftHeld = true; movePlayer(-1, 0) }
-        else if (event.key === Qt.Key_Right || event.key === Qt.Key_D) { rightHeld = true; movePlayer(1, 0) }
-        else if (event.key === Qt.Key_Up || event.key === Qt.Key_W) { upHeld = true; movePlayer(0, -1) }
-        else if (event.key === Qt.Key_Down || event.key === Qt.Key_S) { downHeld = true; movePlayer(0, 1) }
+        if (event.key === Qt.Key_Left || event.key === Qt.Key_A) { leftHeld = true; requestMove(-1, 0) }
+        else if (event.key === Qt.Key_Right || event.key === Qt.Key_D) { rightHeld = true; requestMove(1, 0) }
+        else if (event.key === Qt.Key_Up || event.key === Qt.Key_W) { upHeld = true; requestMove(0, -1) }
+        else if (event.key === Qt.Key_Down || event.key === Qt.Key_S) { downHeld = true; requestMove(0, 1) }
         else if (event.key === Qt.Key_Space) purge()
         else if (event.key === Qt.Key_P) mode = mode === "paused" ? "playing" : "paused"
         else if (event.key === Qt.Key_H) openScores()
@@ -378,10 +387,10 @@ ShellRoot {
         repeat: true
         running: game.mode === "playing" && (game.leftHeld || game.rightHeld || game.upHeld || game.downHeld)
         onTriggered: {
-          if (game.leftHeld) game.movePlayer(-1, 0)
-          else if (game.rightHeld) game.movePlayer(1, 0)
-          else if (game.upHeld) game.movePlayer(0, -1)
-          else if (game.downHeld) game.movePlayer(0, 1)
+          if (game.leftHeld) game.requestMove(-1, 0)
+          else if (game.rightHeld) game.requestMove(1, 0)
+          else if (game.upHeld) game.requestMove(0, -1)
+          else if (game.downHeld) game.requestMove(0, 1)
         }
       }
 

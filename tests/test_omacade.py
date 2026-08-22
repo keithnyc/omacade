@@ -284,6 +284,9 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn('cabinetId: shell.cabinet.scoreKey', rootbound)
         self.assertIn("property int moveInterval: 175", rootbound)
         self.assertIn("moveInterval = digging ? 235 : 175", rootbound)
+        self.assertIn("function requestMove(dx, dy)", rootbound)
+        self.assertIn("if (now - lastMoveAt < moveInterval) return", rootbound)
+        self.assertEqual(rootbound.count("game.requestMove("), 4)
         self.assertIn("property real playerVisualX", rootbound)
         self.assertGreaterEqual(rootbound.count("if (event.isAutoRepeat)"), 2)
 
