@@ -1,0 +1,26 @@
+#!/bin/bash
+# Keep Omacade's launcher icon visible across light and dark themes.
+set -euo pipefail
+
+plugin="${HOME}/.config/omarchy/plugins/io.github.keithnyc.omacade"
+colors="${HOME}/.local/state/omarchy/current/theme/colors.toml"
+icon_dir="${HOME}/.local/share/icons/hicolor"
+
+[[ -d $plugin ]] || exit 0
+
+mode="dark"
+if [[ -f $colors ]]; then
+  mode=$(awk -F'"' '/^mode[[:space:]]*=/ {print $2; exit}' "$colors")
+fi
+
+if [[ $mode == light ]]; then
+  source_icon="${plugin}/icon.svg"
+else
+  source_icon="${plugin}/icon-white.svg"
+fi
+[[ -f $source_icon ]] || exit 0
+
+mkdir -p "${icon_dir}/scalable/apps"
+cp "$source_icon" "${icon_dir}/scalable/apps/omacade.svg"
+gtk-update-icon-cache -f "$icon_dir" >/dev/null 2>&1 || true
+omarchy menu refresh >/dev/null 2>&1 || true

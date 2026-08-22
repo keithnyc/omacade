@@ -1,0 +1,297 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import runpy
+import re
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+GAME_PATH = ROOT / "omacade"
+
+
+class OmacadeTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.module = runpy.run_path(str(GAME_PATH), run_name="omacade_test")
+
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory(prefix="omacade-test-")
+        base = Path(self.temp_dir.name)
+        globals_ = self.module["Lander"].__init__.__globals__
+        globals_["CONFIG_PATH"] = base / "state" / "omacade.json"
+        globals_["SCORE_PATH"] = base / "share" / "scores.json"
+        globals_["THEME_PATH"] = base / "theme" / "colors.toml"
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def test_generated_terrain_has_two_valid_pads(self) -> None:
+        terrain = self.module["Terrain"](80, 24, 42)
+        self.assertEqual(len(terrain.pads), 2)
+        for pad in terrain.pads:
+            self.assertGreaterEqual(pad.start, 0)
+            self.assertLess(pad.end, terrain.width)
+            self.assertTrue(all(terrain.heights[x] == pad.height for x in range(pad.start, pad.end + 1)))
+
+    def test_gentle_upright_touchdown_scores(self) -> None:
+        lander = self.module["Lander"](80, 24, "cadet")
+        pad = lander.terrain.pads[0]
+        lander.x = (pad.start + pad.end) / 2
+        lander.y = pad.height - 1.0
+        lander.vx = 0.0
+        lander.vy = 0.1
+        lander.angle = 0.0
+        lander.update(0.01)
+        self.assertEqual(lander.state, "landed")
+        self.assertGreater(lander.score, 0)
+
+    def test_fast_touchdown_crashes(self) -> None:
+        lander = self.module["Lander"](80, 24, "ace")
+        pad = lander.terrain.pads[0]
+        lander.x = (pad.start + pad.end) / 2
+        lander.y = pad.height - 1.0
+        lander.vx = 0.0
+        lander.vy = 2.0
+        lander.angle = 0.0
+        lander.update(0.01)
+        self.assertEqual(lander.state, "crashed")
+        self.assertEqual(lander.message, "DESCENT TOO FAST")
+
+    def test_impulse_and_rotation_are_frame_rate_independent(self) -> None:
+        Lander = self.module["Lander"]
+        fast = Lander(80, 24, "cadet")
+        slow = Lander(80, 24, "cadet")
+        for lander in (fast, slow):
+            lander.x = 40.0
+            lander.y = 3.0
+            lander.vx = 0.0
+            lander.vy = 0.0
+            lander.angle = 0.0
+            lander.fire()
+            lander.rotate(1.0)
+
+        for _ in range(120):
+            fast.update(1.0 / 120.0)
+        for _ in range(30):
+            slow.update(1.0 / 30.0)
+
+        self.assertAlmostEqual(fast.x, slow.x, places=5)
+        self.assertAlmostEqual(fast.y, slow.y, places=5)
+        self.assertAlmostEqual(fast.vx, slow.vx, places=5)
+        self.assertAlmostEqual(fast.vy, slow.vy, places=5)
+        self.assertAlmostEqual(fast.angle, slow.angle, places=5)
+        self.assertAlmostEqual(fast.fuel, slow.fuel, places=5)
+
+    def test_a_tap_applies_one_exact_engine_impulse(self) -> None:
+        lander = self.module["Lander"](80, 24, "cadet")
+        lander.angle = 0.0
+        initial_fuel = lander.fuel
+        initial_vy = lander.vy
+        lander.fire()
+        self.assertTrue(lander.thrusting)
+        self.assertAlmostEqual(lander.vy, initial_vy - lander.rules["impulse"], places=5)
+        self.assertAlmostEqual(initial_fuel - lander.fuel, lander.rules["fuel_cost"], places=5)
+        lander.update(0.1)
+        lander.update(0.02)
+        self.assertFalse(lander.thrusting)
+        velocity_after_flash = lander.vy
+        lander.update(0.05)
+        self.assertAlmostEqual(
+            lander.vy - velocity_after_flash,
+            lander.rules["gravity"] * 0.05,
+            places=5,
+        )
+
+    def test_input_cooldown_prevents_repeat_bursts(self) -> None:
+        lander = self.module["Lander"](80, 24, "cadet")
+        lander.fire()
+        velocity_after_first = lander.vy
+        fuel_after_first = lander.fuel
+        lander.fire()
+        self.assertEqual(lander.vy, velocity_after_first)
+        self.assertEqual(lander.fuel, fuel_after_first)
+        lander.update(0.08)
+        lander.fire()
+        self.assertLess(lander.vy, velocity_after_first + lander.rules["gravity"] * 0.08)
+        self.assertLess(lander.fuel, fuel_after_first)
+
+    def test_opposite_rotation_is_never_discarded(self) -> None:
+        lander = self.module["Lander"](80, 24, "cadet")
+        step = self.module["ROTATION_STEP"]
+        lander.angle = 0.0
+        lander.rotate(-step)
+        self.assertEqual(lander.angle, -step)
+        lander.rotate(step)
+        self.assertEqual(lander.angle, 0.0)
+
+    def test_redirected_thrust_can_immediately_correct_course(self) -> None:
+        lander = self.module["Lander"](80, 24, "cadet")
+        lander.vx = 0.0
+        lander.vy = 0.0
+        lander.angle = -30.0
+        lander.fire()
+        leftward_velocity = lander.vx
+        self.assertLess(leftward_velocity, 0.0)
+
+        # No time advance: changing attitude must bypass the repeat limiter.
+        lander.angle = 30.0
+        lander.fire()
+        self.assertAlmostEqual(lander.vx, 0.0, places=5)
+        self.assertEqual(lander.fuel, lander.rules["fuel"] - 2 * lander.rules["fuel_cost"])
+
+    def test_real_input_sequence_reverses_course_in_one_frame(self) -> None:
+        App = self.module["App"]
+        app = App(self.module["Settings"](), self.module["Scores"](), direct=True)
+        app.game.angle = 0.0
+        app.game.vx = 0.0
+        app.game.vy = 0.0
+        app.handle("left")
+        app.handle("up")
+        self.assertLess(app.game.vx, 0.0)
+        app.handle("right")
+        app.handle("right")
+        app.handle("up")
+        self.assertGreater(app.game.angle, 0.0)
+        self.assertAlmostEqual(app.game.vx, 0.0, places=5)
+
+    def test_sprite_sheet_covers_nine_attitudes(self) -> None:
+        sprites = self.module["LANDER_SPRITES"]
+        self.assertEqual(set(sprites), set(range(-4, 5)))
+        for frame in sprites.values():
+            self.assertEqual(len(frame), 3)
+            self.assertTrue(all(len(row) == 5 for row in frame))
+
+    def test_graphical_cabinet_uses_transparent_png_sprite(self) -> None:
+        sprite = ROOT / "game" / "assets" / "lander.png"
+        qml = (ROOT / "game" / "shell.qml").read_text(encoding="utf-8")
+        self.assertTrue(sprite.is_file())
+        self.assertEqual(sprite.read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
+        self.assertIn('Qt.resolvedUrl("assets/lander.png")', qml)
+        self.assertIn("Keys.onReleased", qml)
+        self.assertIn("viewportTooSmall", qml)
+        self.assertIn("resizeWorld", qml)
+        self.assertIn('chooseDifficulty("cadet")', qml)
+        self.assertIn('chooseDifficulty("pilot")', qml)
+        self.assertIn('chooseDifficulty("ace")', qml)
+        self.assertIn("enteringInitials", qml)
+        self.assertIn("OMACADE // TOP TEN", qml)
+        self.assertIn("saveDefaultInitials", qml)
+        self.assertIn("footOffsetX: 27", qml)
+        self.assertIn("function landingGear()", qml)
+        self.assertIn("function spawnShootingStar()", qml)
+        self.assertIn("function updateSky(dt)", qml)
+        self.assertIn("id: skyEffectsCanvas", qml)
+        self.assertIn("property int stage: 1", qml)
+        self.assertIn("function advanceStage()", qml)
+        self.assertIn("widePadWidth", qml)
+        self.assertIn('"STAGE " + stage + " CLEAR', qml)
+        self.assertIn("function sculptPadHazards", qml)
+        self.assertIn("twinkleStrength", qml)
+        self.assertIn("import QtMultimedia", qml)
+        self.assertIn("PRESS ENTER TO LAUNCH", qml)
+        self.assertIn("function spawnLandingDust()", qml)
+        self.assertIn("function spawnCrashParticles()", qml)
+        self.assertIn("id: particleCanvas", qml)
+
+        sounds = {
+            "engine.wav", "rotate.wav", "touchdown.wav", "crash.wav",
+            "stage-clear.wav", "start.wav", "comet.wav"
+        }
+        for name in sounds:
+            audio = ROOT / "game" / "assets" / "sfx" / name
+            self.assertTrue(audio.is_file(), name)
+            self.assertEqual(audio.read_bytes()[:4], b"RIFF", name)
+
+    def test_settings_and_score_round_trip(self) -> None:
+        Settings = self.module["Settings"]
+        Scores = self.module["Scores"]
+        settings = Settings()
+        settings.difficulty = "pilot"
+        settings.sound = False
+        settings.initials = "KNY"
+        settings.save()
+        restored = Settings()
+        self.assertEqual(restored.difficulty, "pilot")
+        self.assertFalse(restored.sound)
+        self.assertEqual(restored.initials, "KNY")
+
+        scores = Scores()
+        self.assertEqual(scores.add(1200, "pilot", 42.0, 18.5, restored.initials), 1)
+        self.assertEqual(scores.add(1800, "ace", 30.0, 16.0), 1)
+        self.assertEqual(Scores().best, 1800)
+        self.assertEqual(Scores().landings, 2)
+        self.assertEqual(Scores().data["lander"][1]["initials"], "KNY")
+
+    def test_initials_are_sanitized_and_low_scores_still_count_as_landings(self) -> None:
+        Settings = self.module["Settings"]
+        Scores = self.module["Scores"]
+        config_path = Settings.__init__.__globals__["CONFIG_PATH"]
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text('{"initials": "k!2 z"}\n', encoding="utf-8")
+        self.assertEqual(Settings().initials, "K2Z")
+
+        scores = Scores()
+        for value in range(100, 1100, 100):
+            scores.add(value, "cadet", 50.0, 20.0, "a!*b9")
+        self.assertEqual(scores.add(1, "cadet", 1.0, 99.0, "low"), 0)
+        restored = Scores()
+        self.assertEqual(restored.landings, 11)
+        self.assertEqual(len(restored.data["lander"]), 10)
+        self.assertTrue(all(row["initials"] == "AB9" for row in restored.data["lander"]))
+
+    def test_cli_reports_matching_version(self) -> None:
+        result = subprocess.run(
+            [str(GAME_PATH), "--version"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.stdout.strip(), "Omacade 0.1.0")
+
+    def test_graphical_framework_registers_and_launches_lander(self) -> None:
+        registry = (ROOT / "game" / "framework" / "CabinetRegistry.js").read_text(encoding="utf-8")
+        runtime = (ROOT / "game" / "framework" / "ArcadeData.qml").read_text(encoding="utf-8")
+        theme = (ROOT / "game" / "framework" / "ArcadeTheme.qml").read_text(encoding="utf-8")
+        lobby = (ROOT / "game" / "arcade.qml").read_text(encoding="utf-8")
+        launcher = (ROOT / "omacade-gui").read_text(encoding="utf-8")
+        desktop = (ROOT / "Omacade.desktop").read_text(encoding="utf-8")
+        lander = (ROOT / "game" / "shell.qml").read_text(encoding="utf-8")
+
+        self.assertIn('id: "lander"', registry)
+        self.assertIn('entry: "shell.qml"', registry)
+        self.assertIn("function recordScore(entry)", runtime)
+        self.assertIn("property color accent", theme)
+        self.assertIn("CabinetRegistry.cabinets", lobby)
+        self.assertIn('title: "Omacade"', lobby)
+        self.assertIn('arcade) target="$root/game/arcade.qml"', launcher)
+        self.assertIn('lander) target="$root/game/shell.qml"', launcher)
+        self.assertIn("Exec=omarchy-launch-or-focus Omacade omacade-gui", desktop)
+        self.assertIn('CabinetRegistry.byId("lander")', lander)
+        self.assertIn("ArcadeData { id: arcadeData", lander)
+
+    def test_flight_renderer_stays_inside_terminal_width(self) -> None:
+        Settings = self.module["Settings"]
+        Scores = self.module["Scores"]
+        App = self.module["App"]
+        app = App(Settings(), Scores(), direct=True)
+        app.game.resize(78, 24)
+        frame = app.render_game(80, 30)
+        plain_lines = [
+            re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", line)
+            for line in frame.splitlines()
+        ]
+        self.assertTrue(plain_lines)
+        self.assertTrue(all(len(line) <= 80 for line in plain_lines))
+        plain = "\n".join(plain_lines)
+        self.assertIn("OMACADE // LANDER", plain)
+        self.assertIn("╱███╲", plain)
+        self.assertIn("◆", plain)
+        self.assertIn("▄", plain)
+
+
+if __name__ == "__main__":
+    unittest.main()

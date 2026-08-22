@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.keithnyc.omacade",
+  "name": "Omacade",
+  "version": "0.1.0",
+  "author": "Keith",
+  "license": "MIT",
+  "description": "A modular, theme-aware arcade for Omarchy. Cabinet 01: Lander.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Omacade",
+    "description": "Launch small games that follow the current Omarchy theme.",
+    "category": "Fun",
+    "aliases": [
+      "arcade",
+      "game",
+      "lander"
+    ],
+    "allowMultiple": false,
+    "defaultSection": "center"
+  }
+}

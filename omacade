@@ -1,0 +1,836 @@
+#!/usr/bin/env python3
+"""Omacade: tiny, theme-aware terminal games for Omarchy."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import os
+import random
+import re
+import select
+import shutil
+import signal
+import sys
+import termios
+import time
+import tty
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
+
+
+VERSION = "0.1.0"
+TICK = 1.0 / 30.0
+PHYSICS_STEP = 1.0 / 120.0
+CELL_ASPECT = 2.0
+THRUST_FLASH = 0.11
+THRUST_COOLDOWN = 0.075
+ROTATION_STEP = 22.5
+
+# Nine terminal-native sprite frames, from full left to full right. Each frame
+# is five cells wide and pivots around the same center point.
+LANDER_SPRITES = {
+    -4: ("     ", "◀██━━", " ╲  ╱"),
+    -3: (" ╲   ", "◀██╲ ", "  ╵╱ "),
+    -2: ("▲╲   ", "╲██╲ ", " ╵ ╵╲"),
+    -1: ("╱▲╲  ", "╲██╲ ", " ╵ ╵ "),
+    0: (" ╱▲╲ ", "╱███╲", "╵   ╵"),
+    1: ("  ╱▲╲", " ╱██╱", " ╵ ╵ "),
+    2: ("   ╱▲", " ╱██╱", "╱╵ ╵ "),
+    3: ("   ╱ ", " ╱██▶", " ╲╵  "),
+    4: ("     ", "━━██▶", "╲  ╱ "),
+}
+THEME_PATH = Path.home() / ".local/state/omarchy/current/theme/colors.toml"
+CONFIG_PATH = Path.home() / ".local/state/omarchy/omacade.json"
+SCORE_PATH = Path.home() / ".local/share/omacade/scores.json"
+
+FALLBACK = {
+    "mode": "dark",
+    "accent": "#7daea3",
+    "selection": "#504945",
+    "muted": "#665c54",
+    "background": "#282828",
+    "dark_background": "#1e1e1e",
+    "darker_background": "#161616",
+    "lighter_background": "#3c3836",
+    "foreground": "#d4be98",
+    "bright_foreground": "#f2e5bc",
+    "red": "#ea6962",
+    "yellow": "#d8a657",
+    "orange": "#e78a4e",
+    "green": "#a9b665",
+    "cyan": "#89b482",
+    "blue": "#7daea3",
+    "magenta": "#d3869b",
+}
+
+DIFFICULTIES = {
+    "cadet": {
+        "label": "CADET",
+        "gravity": 0.55,
+        "impulse": 0.18,
+        "fuel_cost": 1.0,
+        "fuel": 120.0,
+        "safe_vy": 1.25,
+        "safe_vx": 0.85,
+        "safe_angle": 14.0,
+        "score_bonus": 600,
+    },
+    "pilot": {
+        "label": "PILOT",
+        "gravity": 0.68,
+        "impulse": 0.17,
+        "fuel_cost": 1.0,
+        "fuel": 100.0,
+        "safe_vy": 1.0,
+        "safe_vx": 0.65,
+        "safe_angle": 10.0,
+        "score_bonus": 1100,
+    },
+    "ace": {
+        "label": "ACE",
+        "gravity": 0.80,
+        "impulse": 0.16,
+        "fuel_cost": 1.0,
+        "fuel": 82.0,
+        "safe_vy": 0.78,
+        "safe_vx": 0.48,
+        "safe_angle": 7.0,
+        "score_bonus": 1800,
+    },
+}
+
+
+def clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
+def hex_rgb(value: str) -> tuple[int, int, int]:
+    text = value.strip().lstrip("#")
+    if len(text) == 3:
+        text = "".join(ch * 2 for ch in text)
+    if len(text) != 6:
+        return (128, 128, 128)
+    try:
+        return (int(text[0:2], 16), int(text[2:4], 16), int(text[4:6], 16))
+    except ValueError:
+        return (128, 128, 128)
+
+
+def parse_theme(path: Path) -> dict[str, str]:
+    colors = dict(FALLBACK)
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return colors
+    for match in re.finditer(r'^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"([^"]*)"', raw, re.M):
+        colors[match.group(1)] = match.group(2)
+    return colors
+
+
+def read_json(path: Path, fallback: dict) -> dict:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else dict(fallback)
+    except (OSError, ValueError, TypeError):
+        return dict(fallback)
+
+
+def write_json(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
+class Theme:
+    def __init__(self) -> None:
+        self.mtime = -1.0
+        self.raw: dict[str, str] = {}
+        self.colors: dict[str, tuple[int, int, int]] = {}
+        self.reload(force=True)
+
+    def reload(self, force: bool = False) -> bool:
+        try:
+            mtime = THEME_PATH.stat().st_mtime
+        except OSError:
+            mtime = -1.0
+        if not force and mtime == self.mtime:
+            return False
+        self.mtime = mtime
+        self.raw = parse_theme(THEME_PATH)
+        self.colors = {
+            key: hex_rgb(value)
+            for key, value in self.raw.items()
+            if key != "mode"
+        }
+        return True
+
+    def get(self, key: str) -> tuple[int, int, int]:
+        return self.colors.get(key, hex_rgb(FALLBACK.get(key, "#888888")))
+
+    def paint(self, text: str, key: str, bold: bool = False) -> str:
+        red, green, blue = self.get(key)
+        weight = "1;" if bold else ""
+        return f"\x1b[{weight}38;2;{red};{green};{blue}m{text}\x1b[0m"
+
+
+class Settings:
+    def __init__(self) -> None:
+        raw = read_json(CONFIG_PATH, {})
+        difficulty = str(raw.get("difficulty", "cadet"))
+        self.difficulty = difficulty if difficulty in DIFFICULTIES else "cadet"
+        self.sound = raw.get("sound", True) is not False
+        self.initials = re.sub(r"[^A-Z0-9]", "", str(raw.get("initials", "")).upper())[:3]
+
+    def save(self) -> None:
+        write_json(CONFIG_PATH, {
+            "difficulty": self.difficulty,
+            "sound": self.sound,
+            "initials": self.initials,
+        })
+
+
+class Scores:
+    def __init__(self) -> None:
+        self.data = read_json(SCORE_PATH, {"lander": [], "successful_landings": 0})
+        if not isinstance(self.data.get("lander"), list):
+            self.data["lander"] = []
+        if not isinstance(self.data.get("successful_landings"), int):
+            self.data["successful_landings"] = 0
+
+    @property
+    def best(self) -> int:
+        rows = self.data["lander"]
+        return int(rows[0].get("score", 0)) if rows else 0
+
+    @property
+    def landings(self) -> int:
+        return int(self.data["successful_landings"])
+
+    def add(self, score: int, difficulty: str, fuel: float, elapsed: float, initials: str = "") -> int:
+        clean_initials = re.sub(r"[^A-Z0-9]", "", str(initials).upper())[:3] or "---"
+        row = {
+            "score": int(score),
+            "initials": clean_initials,
+            "difficulty": difficulty,
+            "fuel": round(fuel, 1),
+            "time": round(elapsed, 1),
+            "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
+        rows = self.data["lander"]
+        rows.append(row)
+        rows.sort(key=lambda item: int(item.get("score", 0)), reverse=True)
+        del rows[10:]
+        self.data["successful_landings"] = self.landings + 1
+        write_json(SCORE_PATH, self.data)
+        return rows.index(row) + 1 if row in rows else 0
+
+
+@dataclass
+class Pad:
+    start: int
+    end: int
+    height: int
+    multiplier: int
+
+    def contains(self, left: float, right: float) -> bool:
+        return left >= self.start and right <= self.end
+
+
+class Terrain:
+    def __init__(self, width: int, height: int, seed: int) -> None:
+        self.width = width
+        self.height = height
+        rng = random.Random(seed)
+        level = height - 5
+        self.heights: list[int] = []
+        for _x in range(width):
+            level += rng.choice((-1, 0, 0, 0, 1))
+            level = int(clamp(level, height - 9, height - 3))
+            self.heights.append(level)
+
+        pad_width = max(6, min(9, width // 10))
+        starts = [max(5, width // 5 - pad_width // 2), min(width - pad_width - 5, width * 3 // 4)]
+        self.pads: list[Pad] = []
+        for index, start in enumerate(starts):
+            end = start + pad_width - (2 if index == 1 else 0)
+            surface = min(self.heights[start:end + 1])
+            for x in range(max(0, start - 1), min(width, end + 2)):
+                self.heights[x] = surface
+            self.pads.append(Pad(start, end, surface, 2 if index == 0 else 3))
+
+        self.stars = [
+            (rng.randrange(1, width - 1), rng.randrange(1, max(2, height - 11)), rng.choice((".", ".", "+")))
+            for _ in range(max(8, width // 5))
+        ]
+
+    def height_at(self, x: float) -> int:
+        index = int(clamp(round(x), 0, self.width - 1))
+        return self.heights[index]
+
+    def pad_beneath(self, left: float, right: float) -> Optional[Pad]:
+        for pad in self.pads:
+            if pad.contains(left, right):
+                return pad
+        return None
+
+
+class Lander:
+    def __init__(self, width: int, height: int, difficulty: str) -> None:
+        self.width = width
+        self.height = height
+        self.difficulty = difficulty
+        self.rules = DIFFICULTIES[difficulty]
+        self.seed = random.SystemRandom().randrange(1, 2**31)
+        self.terrain = Terrain(width, height, self.seed)
+        self.x = width * 0.48
+        self.y = 2.5
+        self.vx = random.uniform(-0.18, 0.18)
+        self.vy = 0.0
+        self.angle = random.choice((-6.0, 0.0, 6.0))
+        self.fuel = float(self.rules["fuel"])
+        self.elapsed = 0.0
+        self.last_thrust = -1.0
+        self.last_thrust_angle: Optional[float] = None
+        self.thrust_flash_until = 0.0
+        self.thrusting = False
+        self.paused = False
+        self.state = "flying"
+        self.message = ""
+        self.score = 0
+        self.rank = 0
+        self.saved = False
+
+    def rotate(self, amount: float) -> None:
+        if self.state == "flying" and not self.paused:
+            self.angle = clamp(self.angle + amount, -90.0, 90.0)
+
+    def fire(self) -> None:
+        redirected = (
+            self.last_thrust_angle is None
+            or abs(self.angle - self.last_thrust_angle) >= 0.01
+        )
+        if (
+            self.state != "flying"
+            or self.paused
+            or self.fuel <= 0.0
+            or (not redirected and self.elapsed - self.last_thrust < THRUST_COOLDOWN)
+        ):
+            return
+        radians = math.radians(self.angle)
+        impulse = float(self.rules["impulse"])
+        self.vx += math.sin(radians) * impulse
+        self.vy -= math.cos(radians) * impulse
+        self.fuel = max(0.0, self.fuel - float(self.rules["fuel_cost"]))
+        self.last_thrust = self.elapsed
+        self.last_thrust_angle = self.angle
+        self.thrust_flash_until = self.elapsed + THRUST_FLASH
+        self.thrusting = True
+
+    def toggle_pause(self) -> None:
+        if self.state == "flying":
+            self.paused = not self.paused
+
+    def resize(self, width: int, height: int) -> None:
+        if width == self.width and height == self.height:
+            return
+        x_ratio = self.x / max(1, self.width - 1)
+        y_ratio = self.y / max(1, self.height - 1)
+        old_seed = self.seed
+        self.width = width
+        self.height = height
+        self.terrain = Terrain(width, height, old_seed)
+        self.x = clamp(x_ratio * (width - 1), 2, width - 3)
+        self.y = clamp(y_ratio * (height - 1), 1, height - 4)
+
+    def update(self, dt: float) -> None:
+        if self.state != "flying" or self.paused:
+            self.thrusting = False
+            return
+        remaining = min(dt, 0.10)
+        while remaining > 0.0 and self.state == "flying":
+            step = min(PHYSICS_STEP, remaining)
+            self._step(step)
+            remaining -= step
+        self.thrusting = self.elapsed < self.thrust_flash_until and self.fuel > 0.0
+
+    def _step(self, dt: float) -> None:
+        self.elapsed += dt
+        self.vy += float(self.rules["gravity"]) * dt
+
+        # Terminal cells are roughly twice as tall as they are wide. World
+        # velocity remains in one consistent unit; only projection to columns
+        # accounts for that display aspect ratio.
+        self.x += self.vx * dt * CELL_ASPECT
+        self.y += self.vy * dt
+
+        if self.x < 1.0 or self.x > self.width - 2.0 or self.y < 0.4:
+            self.crash("LOST TO THE VOID")
+            return
+
+        foot_y = self.y + 1.0
+        surface = min(self.terrain.height_at(self.x - 1), self.terrain.height_at(self.x + 1))
+        if foot_y < surface:
+            return
+
+        pad = self.terrain.pad_beneath(self.x - 1.0, self.x + 1.0)
+        upright = abs(self.angle) <= float(self.rules["safe_angle"])
+        gentle = self.vy <= float(self.rules["safe_vy"])
+        stable = abs(self.vx) <= float(self.rules["safe_vx"])
+        if pad and upright and gentle and stable:
+            self.state = "landed"
+            self.y = pad.height - 1.0
+            precision = max(0, 350 - int(abs(self.vx) * 180 + self.vy * 120 + abs(self.angle) * 8))
+            self.score = int(self.rules["score_bonus"]) + int(self.fuel * 10) + precision * pad.multiplier
+            self.message = f"TOUCHDOWN  ·  PAD x{pad.multiplier}"
+        elif not pad:
+            self.crash("MISSED THE PAD")
+        elif not upright:
+            self.crash("BAD ATTITUDE")
+        elif not gentle:
+            self.crash("DESCENT TOO FAST")
+        else:
+            self.crash("LATERAL SPEED TOO HIGH")
+
+    def crash(self, reason: str) -> None:
+        self.state = "crashed"
+        self.message = reason
+        self.thrusting = False
+
+    @property
+    def altitude(self) -> float:
+        return max(0.0, self.terrain.height_at(self.x) - self.y - 1.0)
+
+
+class Terminal:
+    def __init__(self) -> None:
+        self.fd = sys.stdin.fileno()
+        self.saved: Optional[list] = None
+        self.buffer = b""
+
+    def __enter__(self) -> "Terminal":
+        self.saved = termios.tcgetattr(self.fd)
+        tty.setcbreak(self.fd)
+        sys.stdout.write("\x1b[?1049h\x1b[?25l\x1b[2J\x1b[H")
+        sys.stdout.flush()
+        return self
+
+    def __exit__(self, _kind, _value, _traceback) -> None:
+        if self.saved is not None:
+            termios.tcsetattr(self.fd, termios.TCSADRAIN, self.saved)
+        sys.stdout.write("\x1b[0m\x1b[?25h\x1b[?1049l")
+        sys.stdout.flush()
+
+    def keys(self) -> list[str]:
+        chunks: list[bytes] = []
+        while select.select([self.fd], [], [], 0)[0]:
+            try:
+                chunks.append(os.read(self.fd, 64))
+            except OSError:
+                break
+        if chunks:
+            self.buffer += b"".join(chunks)
+
+        result: list[str] = []
+        sequences = {
+            b"\x1b[A": "up",
+            b"\x1b[B": "down",
+            b"\x1b[C": "right",
+            b"\x1b[D": "left",
+        }
+        while self.buffer:
+            matched = False
+            for sequence, name in sequences.items():
+                if self.buffer.startswith(sequence):
+                    result.append(name)
+                    self.buffer = self.buffer[len(sequence):]
+                    matched = True
+                    break
+            if matched:
+                continue
+            if self.buffer.startswith(b"\x1b") and len(self.buffer) < 3:
+                break
+            byte = self.buffer[0]
+            self.buffer = self.buffer[1:]
+            if byte in (10, 13):
+                result.append("enter")
+            elif byte == 27:
+                result.append("escape")
+            elif 32 <= byte < 127:
+                result.append(chr(byte).lower())
+        return result
+
+
+class App:
+    def __init__(self, settings: Settings, scores: Scores, direct: bool) -> None:
+        self.settings = settings
+        self.scores = scores
+        self.theme = Theme()
+        self.screen = "game" if direct else "menu"
+        self.game: Optional[Lander] = None
+        self.running = True
+        self.last_bell = 0.0
+        self.last_theme_check = 0.0
+        self.last_size = (0, 0)
+        if direct:
+            self.new_game()
+
+    def dimensions(self) -> tuple[int, int, int, int]:
+        size = shutil.get_terminal_size((84, 30))
+        columns = max(1, size.columns)
+        rows = max(1, size.lines)
+        field_width = max(58, min(98, columns - 2))
+        field_height = max(17, min(29, rows - 6))
+        return columns, rows, field_width, field_height
+
+    def new_game(self) -> None:
+        _columns, _rows, width, height = self.dimensions()
+        self.game = Lander(width, height, self.settings.difficulty)
+        self.screen = "game"
+
+    def bell(self) -> None:
+        if self.settings.sound:
+            sys.stdout.write("\a")
+
+    def cycle_difficulty(self, direction: int = 1) -> None:
+        names = list(DIFFICULTIES)
+        index = names.index(self.settings.difficulty)
+        self.settings.difficulty = names[(index + direction) % len(names)]
+        self.settings.save()
+
+    def handle(self, key: str) -> None:
+        if self.screen == "menu":
+            if key in ("q", "escape"):
+                self.running = False
+            elif key in ("enter", " ", "l"):
+                self.new_game()
+            elif key in ("d", "right", "down"):
+                self.cycle_difficulty(1)
+            elif key in ("left", "up"):
+                self.cycle_difficulty(-1)
+            elif key == "s":
+                self.settings.sound = not self.settings.sound
+                self.settings.save()
+            return
+
+        if self.game is None:
+            self.screen = "menu"
+            return
+        game = self.game
+        if key in ("q", "escape"):
+            self.screen = "menu"
+        elif key == "r":
+            self.new_game()
+        elif key == "p":
+            game.toggle_pause()
+        elif game.state != "flying" and key in ("enter", " "):
+            self.new_game()
+        elif key in ("left", "a"):
+            game.rotate(-ROTATION_STEP)
+        elif key in ("right", "d"):
+            game.rotate(ROTATION_STEP)
+        elif key in ("up", "w", " "):
+            game.fire()
+
+    def update(self, dt: float) -> None:
+        now = time.monotonic()
+        if now - self.last_theme_check > 1.0:
+            self.theme.reload()
+            self.last_theme_check = now
+        if self.screen != "game" or self.game is None:
+            return
+
+        _columns, _rows, width, height = self.dimensions()
+        self.game.resize(width, height)
+        before = self.game.state
+        self.game.update(dt)
+        if before == "flying" and self.game.state in ("landed", "crashed"):
+            self.bell()
+        if self.game.state == "landed" and not self.game.saved:
+            self.game.rank = self.scores.add(
+                self.game.score,
+                self.game.difficulty,
+                self.game.fuel,
+                self.game.elapsed,
+                self.settings.initials,
+            )
+            self.game.saved = True
+
+    def render(self) -> str:
+        columns, rows, _width, _height = self.dimensions()
+        if columns < 60 or rows < 23:
+            return self.render_small(columns, rows)
+        if self.screen == "menu":
+            return self.render_menu(columns, rows)
+        return self.render_game(columns, rows)
+
+    def render_small(self, columns: int, rows: int) -> str:
+        lines = [
+            "",
+            self.theme.paint("OMACADE", "accent", True),
+            "",
+            "The cabinet needs a larger terminal.",
+            f"Current: {columns} x {rows}",
+            "Minimum: 60 x 23",
+            "",
+            "Resize the window, or press q to quit.",
+        ]
+        return "\x1b[H\x1b[2J" + "\n".join(lines)
+
+    def centered(self, text: str, width: int) -> str:
+        plain = re.sub(r"\x1b\[[0-9;]*m", "", text)
+        return " " * max(0, (width - len(plain)) // 2) + text
+
+    def render_menu(self, columns: int, rows: int) -> str:
+        difficulty = DIFFICULTIES[self.settings.difficulty]["label"]
+        logo = [
+            "   ____  __  ______   _________    ____  ______",
+            "  / __ \\/  |/  /   | / ____/   |  / __ \\/ ____/",
+            " / / / / /|_/ / /| |/ /   / /| | / / / / __/   ",
+            "/ /_/ / /  / / ___ / /___/ ___ |/ /_/ / /___   ",
+            "\\____/_/  /_/_/  |_\\____/_/  |_/_____/_____/   ",
+        ]
+        lines = [""]
+        lines.extend(self.centered(self.theme.paint(line, "accent", True), columns) for line in logo)
+        lines.extend([
+            "",
+            self.centered(self.theme.paint("INSERT NO COINS", "yellow", True), columns),
+            "",
+            self.centered(self.theme.paint("╭─ CABINET 01 ───────────────────────────────────╮", "muted"), columns),
+            self.centered(self.theme.paint("│   ╭────────────╮                               │", "muted"), columns),
+            self.centered(self.theme.paint("│   │  ·   ╱▲╲  │    L A N D E R                │", "bright_foreground", True), columns),
+            self.centered(self.theme.paint("│   │   ══ x2 ══ │    Bring the little ship home │", "foreground"), columns),
+            self.centered(self.theme.paint("│   ╰────────────╯                               │", "muted"), columns),
+            self.centered(self.theme.paint("╰────────────────────────────────────────────────╯", "muted"), columns),
+            "",
+            self.centered(f"Flight school  ◀  {difficulty:^7}  ▶", columns),
+            self.centered(f"Cabinet sound  {'ON' if self.settings.sound else 'OFF'}", columns),
+            "",
+            self.centered(f"Best score  {self.scores.best:>6}    Successful landings  {self.scores.landings}", columns),
+            "",
+            self.centered(self.theme.paint("ENTER  launch Lander", "green", True), columns),
+            self.centered("← → / d  difficulty    s  sound    q  quit", columns),
+        ])
+        while len(lines) < rows:
+            lines.append("")
+        return "\x1b[H" + "\n".join(lines[:rows])
+
+    def render_game(self, columns: int, rows: int) -> str:
+        assert self.game is not None
+        game = self.game
+        width, height = game.width, game.height
+        chars = [[" " for _ in range(width)] for _ in range(height)]
+        colors = [["dark_foreground" for _ in range(width)] for _ in range(height)]
+
+        def draw(x: int, y: int, character: str, color: str) -> None:
+            if 0 <= x < width and 0 <= y < height and character != " ":
+                chars[y][x] = character
+                colors[y][x] = color
+
+        for sx, sy, star in game.terrain.stars:
+            if 0 <= sy < height and 0 <= sx < width:
+                draw(sx, sy, "✦" if star == "+" else "·", "muted")
+
+        for x, surface in enumerate(game.terrain.heights):
+            if 0 <= surface < height:
+                draw(x, surface, "▄", "muted")
+                for y in range(surface + 1, height):
+                    depth = y - surface
+                    texture = "█" if depth == 1 else "▓" if depth < 4 else "▒"
+                    shade = "selection" if depth < 3 else "muted"
+                    draw(x, y, texture, shade)
+
+        for pad in game.terrain.pads:
+            for x in range(pad.start, pad.end + 1):
+                draw(x, pad.height, "━", "yellow")
+            draw(pad.start, pad.height, "◆", "yellow")
+            draw(pad.end, pad.height, "◆", "yellow")
+            label = f" ×{pad.multiplier} "
+            start = pad.start + max(0, (pad.end - pad.start + 1 - len(label)) // 2)
+            if pad.height + 1 < height:
+                for offset, character in enumerate(label):
+                    if start + offset <= pad.end:
+                        draw(start + offset, pad.height + 1, character, "yellow")
+
+        ship_x = int(round(game.x))
+        ship_y = int(round(game.y))
+        angle = game.angle
+        ship_color = "green" if game.state == "landed" else "red" if game.state == "crashed" else "bright_foreground"
+        if game.state == "crashed":
+            phase = int(time.monotonic() * 8) % 3
+            bursts = (
+                ("  │  ", "─ ✦ ─", "  │  "),
+                ("╲ │ ╱", "─ ◆ ─", "╱ │ ╲"),
+                ("  ·  ", "· ✦ ·", "  ·  "),
+            )[phase]
+            for dy, row in enumerate(bursts, start=-1):
+                for dx, character in enumerate(row, start=-2):
+                    draw(ship_x + dx, ship_y + dy, character, "orange" if phase != 2 else "red")
+        else:
+            sprite_frame = int(clamp(round(angle / 22.5), -4, 4))
+            sprite = LANDER_SPRITES[sprite_frame]
+            for dy, row in enumerate(sprite, start=-1):
+                for dx, character in enumerate(row, start=-2):
+                    draw(ship_x + dx, ship_y + dy, character, ship_color)
+
+            if game.state == "landed":
+                draw(ship_x - 3, ship_y, "✦", "green")
+                draw(ship_x + 3, ship_y, "✦", "green")
+            elif game.thrusting:
+                radians = math.radians(angle)
+                flame_x = ship_x - int(round(math.sin(radians) * 2.0))
+                flame_y = ship_y + int(round(math.cos(radians) * 2.2))
+                flame = ("╿", "◆", "│")[int(time.monotonic() * 18) % 3]
+                draw(flame_x, flame_y, flame, "orange")
+                tail_x = ship_x - int(round(math.sin(radians) * 3.0))
+                tail_y = ship_y + int(round(math.cos(radians) * 3.1))
+                draw(tail_x, tail_y, "·", "yellow")
+
+        field_lines = []
+        for y in range(height):
+            pieces: list[str] = []
+            active_color = ""
+            for x in range(width):
+                key = colors[y][x]
+                if key != active_color:
+                    red, green, blue = self.theme.get(key)
+                    pieces.append(f"\x1b[38;2;{red};{green};{blue}m")
+                    active_color = key
+                pieces.append(chars[y][x])
+            pieces.append("\x1b[0m")
+            border_red, border_green, border_blue = self.theme.get("muted")
+            border_color = f"\x1b[38;2;{border_red};{border_green};{border_blue}m"
+            field_lines.append(border_color + "│" + "".join(pieces) + border_color + "│\x1b[0m")
+
+        attitude = f"{game.angle:+05.1f}°"
+        fuel_ratio = clamp(game.fuel / float(game.rules["fuel"]), 0.0, 1.0)
+        fuel_cells = int(round(fuel_ratio * 8))
+        fuel_meter = "█" * fuel_cells + "░" * (8 - fuel_cells)
+        status = (
+            f" FUEL {fuel_meter} {game.fuel:05.1f}  ALT {game.altitude:04.1f}  "
+            f"V/S {game.vy:+05.2f}  H/S {game.vx:+05.2f}  ATT {attitude} "
+        )
+        rules = game.rules
+        danger = max(
+            max(0.0, game.vy) / float(rules["safe_vy"]),
+            abs(game.vx) / float(rules["safe_vx"]),
+            abs(game.angle) / float(rules["safe_angle"]),
+        )
+        status_color = "red" if danger > 1.0 else "yellow" if danger > 0.72 else "green"
+        cabinet_width = width + 2
+        title = f" OMACADE // LANDER "
+        level = f" {rules['label']} "
+        top_fill = max(0, cabinet_width - len(title) - len(level) - 3)
+        top = "╭─" + title + "─" * top_fill + level + "╮"
+        divider_label = (
+            f" SAFE  V/S≤{rules['safe_vy']:.2f}  H/S≤{rules['safe_vx']:.2f}  ATT≤{rules['safe_angle']:.0f}° "
+        )
+        divider = "├─" + divider_label + "─" * max(0, cabinet_width - len(divider_label) - 3) + "┤"
+        header = "│" + self.theme.paint(status.ljust(width)[:width], status_color, True) + "│"
+        bottom = "╰" + "─" * width + "╯"
+        controls = " ← → rotate   ↑ thrust   P pause   R retry   Q arcade "
+        lines = [
+            self.theme.paint(top[:cabinet_width], "accent", True),
+            header,
+            self.theme.paint(divider[:cabinet_width], "muted"),
+        ] + field_lines + [
+            self.theme.paint(bottom, "muted"),
+            self.theme.paint(controls.center(cabinet_width)[:cabinet_width], "muted"),
+        ]
+
+        if game.paused:
+            lines = self.overlay(lines, cabinet_width, "PAUSED", "Press P to resume")
+        elif game.state == "landed":
+            detail = f"SCORE {game.score}   RANK #{game.rank}   FUEL {game.fuel:.1f}"
+            lines = self.overlay(lines, cabinet_width, game.message, detail + "   ·   ENTER fly again")
+        elif game.state == "crashed":
+            detail = f"V/S {game.vy:+.2f}   H/S {game.vx:+.2f}   ATT {game.angle:+.1f}°"
+            lines = self.overlay(lines, cabinet_width, game.message, detail + "   ·   ENTER retry")
+
+        left = max(0, (columns - cabinet_width) // 2)
+        prefix = " " * left
+        output = [prefix + line for line in lines]
+        while len(output) < rows:
+            output.append("")
+        return "\x1b[H" + "\n".join(output[:rows])
+
+    def overlay(self, lines: list[str], width: int, title: str, detail: str) -> list[str]:
+        center = 2 + max(2, (len(lines) - 3) // 2)
+        box_width = min(width - 6, max(44, len(detail) + 4))
+        left = max(0, (width - box_width) // 2)
+        border = "+" + "-" * (box_width - 2) + "+"
+        rows = [
+            border,
+            "|" + title.center(box_width - 2) + "|",
+            "|" + detail.center(box_width - 2)[:box_width - 2] + "|",
+            border,
+        ]
+        result = list(lines)
+        for offset, row in enumerate(rows):
+            index = center + offset
+            if index >= len(result):
+                break
+            clean = re.sub(r"\x1b\[[0-9;]*m", "", result[index])
+            clean = clean.ljust(width)
+            merged = clean[:left] + row + clean[left + box_width:]
+            result[index] = self.theme.paint(merged[:width], "yellow" if offset in (0, 3) else "bright_foreground", offset == 1)
+        return result
+
+    def run(self) -> int:
+        previous = time.monotonic()
+        last_frame = ""
+        with Terminal() as terminal:
+            while self.running:
+                frame_start = time.monotonic()
+                dt = frame_start - previous
+                previous = frame_start
+                for key in terminal.keys():
+                    self.handle(key)
+                self.update(dt)
+                frame = self.render()
+                if frame != last_frame:
+                    sys.stdout.write(frame)
+                    sys.stdout.flush()
+                    last_frame = frame
+                remaining = TICK - (time.monotonic() - frame_start)
+                if remaining > 0:
+                    time.sleep(remaining)
+        return 0
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="omacade",
+        description="Tiny, theme-aware terminal games for Omarchy.",
+    )
+    parser.add_argument("cabinet", nargs="?", choices=("lander",), help="start a cabinet directly")
+    parser.add_argument("--difficulty", choices=tuple(DIFFICULTIES), help="override saved difficulty")
+    parser.add_argument("--no-sound", action="store_true", help="disable cabinet sounds for this run")
+    parser.add_argument("--version", action="version", version=f"Omacade {VERSION}")
+    return parser.parse_args(argv[1:])
+
+
+def main(argv: list[str]) -> int:
+    options = parse_args(argv)
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        sys.stderr.write("omacade needs an interactive terminal\n")
+        return 2
+    settings = Settings()
+    if options.difficulty:
+        settings.difficulty = options.difficulty
+    if options.no_sound:
+        settings.sound = False
+    scores = Scores()
+    signal.signal(signal.SIGINT, lambda *_args: (_ for _ in ()).throw(KeyboardInterrupt()))
+    try:
+        return App(settings, scores, direct=options.cabinet == "lander").run()
+    except KeyboardInterrupt:
+        return 130
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

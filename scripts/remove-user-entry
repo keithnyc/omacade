@@ -1,0 +1,27 @@
+#!/bin/bash
+set -euo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+bin_link="${HOME}/.local/bin/omacade"
+gui_link="${HOME}/.local/bin/omacade-gui"
+desktop_link="${HOME}/.local/share/applications/omacade.desktop"
+hook="${HOME}/.config/omarchy/hooks/theme-set.d/omacade-icon-theme"
+icon="${HOME}/.local/share/icons/hicolor/scalable/apps/omacade.svg"
+
+remove_owned_link() {
+  local link=$1
+  local expected=$2
+  if [[ -L $link && $(readlink -f "$link") == "$expected" ]]; then
+    rm -f "$link"
+  fi
+}
+
+remove_owned_link "$bin_link" "$root/omacade"
+remove_owned_link "$gui_link" "$root/omacade-gui"
+remove_owned_link "$desktop_link" "$root/Omacade.desktop"
+rm -f "$hook" "$icon"
+update-desktop-database "${HOME}/.local/share/applications" >/dev/null 2>&1 || true
+gtk-update-icon-cache -f "${HOME}/.local/share/icons/hicolor" >/dev/null 2>&1 || true
+omarchy menu refresh >/dev/null 2>&1 || true
+
+echo "Removed Omacade's optional command, launcher, hook, and cached icon."

@@ -1,0 +1,15 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Omacade
+Comment=Tiny games for Omarchy
+Exec=omarchy-launch-or-focus Omacade omacade-gui
+Icon=omacade
+Terminal=false
+Categories=Game;ArcadeGame;
+StartupNotify=true
+Actions=Lander;
+
+[Desktop Action Lander]
+Name=Play Lander Directly
+Exec=omacade-gui lander

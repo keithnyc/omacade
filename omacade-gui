@@ -1,0 +1,23 @@
+#!/bin/bash
+set -euo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+mkdir -p "${HOME}/.local/state/omarchy" "${HOME}/.local/share/omacade"
+
+[[ -f ${HOME}/.local/state/omarchy/omacade.json ]] ||
+  printf '{\n  "difficulty": "cadet",\n  "sound": true,\n  "initials": ""\n}\n' > "${HOME}/.local/state/omarchy/omacade.json"
+[[ -f ${HOME}/.local/share/omacade/scores.json ]] ||
+  printf '{\n  "lander": [],\n  "successful_landings": 0\n}\n' > "${HOME}/.local/share/omacade/scores.json"
+
+cabinet=${1:-arcade}
+case "$cabinet" in
+  arcade) target="$root/game/arcade.qml" ;;
+  lander) target="$root/game/shell.qml" ;;
+  *)
+    printf 'Unknown Omacade cabinet: %s\n' "$cabinet" >&2
+    printf 'Available: arcade, lander\n' >&2
+    exit 2
+    ;;
+esac
+
+exec qs -n -p "$target"

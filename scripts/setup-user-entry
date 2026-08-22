@@ -1,0 +1,24 @@
+#!/bin/bash
+# Optional desktop/CLI integration. Omarchy's plugin installer intentionally
+# clones only; it never runs scripts from a plugin.
+set -euo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+bin_dir="${HOME}/.local/bin"
+app_dir="${HOME}/.local/share/applications"
+
+mkdir -p "$bin_dir" "$app_dir"
+ln -sfn "$root/omacade" "$bin_dir/omacade"
+ln -sfn "$root/omacade-gui" "$bin_dir/omacade-gui"
+ln -sfn "$root/Omacade.desktop" "$app_dir/omacade.desktop"
+
+if command -v omarchy >/dev/null 2>&1; then
+  omarchy hook install theme-set "$root/hooks/omacade-icon-theme"
+  "$root/hooks/omacade-icon-theme"
+else
+  update-desktop-database "$app_dir" >/dev/null 2>&1 || true
+fi
+
+echo "Installed: $bin_dir/omacade"
+echo "Installed: $bin_dir/omacade-gui"
+echo "Installed: $app_dir/omacade.desktop"
