@@ -157,7 +157,10 @@ gameplay pass. Cabinet 03, Packet Hop, adds a distinct lane-crossing game with
 process traffic, rideable network carriers, TTL pressure, and root-port delivery.
 Its `/LAN`, `/WAN`, `/VPN`, and `/ROOT` routes introduce firewall traffic,
 encrypted relay carriers, announced direction reversals, and progressively
-tighter TTL budgets. Next work is cabinet-wide polish and additional hazards.
+tighter TTL budgets. Packet swarms now surge, switches buffer, DPI beams sweep,
+firewalls pulse open, SSH carriers phase, and VPN relays telegraph reversals.
+Near-miss bonuses, courier trails, and port-binding beams reinforce the new
+route behaviors. Next work is cabinet-wide polish and additional hazards.
 
 ## License
 

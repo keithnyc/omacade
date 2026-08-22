@@ -45,10 +45,10 @@ ShellRoot {
       readonly property real spriteCell: 313.5
       readonly property real spriteScale: 0.76
       readonly property string zoneName: stage === 1 ? "/LAN" : stage === 2 ? "/WAN" : stage === 3 ? "/VPN" : "/ROOT"
-      readonly property string routeRule: stage === 1 ? "LOCAL TRAFFIC // LEARN THE GAPS"
-                                            : stage === 2 ? "FIREWALL TRAFFIC ONLINE"
-                                            : stage === 3 ? "VPN RELAYS REVERSE EVERY 6S"
-                                            : "ROUTES REBALANCE // TTL TIGHT"
+      readonly property string routeRule: stage === 1 ? "LOCAL TRAFFIC // SWITCHES BUFFER"
+                                            : stage === 2 ? "FIREWALLS PULSE // DPI SWEEPS"
+                                            : stage === 3 ? "SSH PHASES // VPN RELAYS REVERSE"
+                                            : "ALL ROUTES REBALANCE // TTL TIGHT"
       readonly property real cellWidth: playfield.width / columns
       readonly property real cellHeight: playfield.height / rows
       readonly property bool tooSmall: playfield.width < 620 || playfield.height < 496
@@ -69,8 +69,11 @@ ShellRoot {
       property string modeBeforeScores: "attract"
       property string statusMessage: "ROUTE READY"
       property real animationTime: 0
+      property real stageTime: 0
       property real transitionLife: 0
+      property real routeWarningLife: 0
       property real lastHopAt: -10000
+      property real lastNearMissAt: -10000
       property int intentX: 0
       property int intentY: 0
       property bool leftHeld: false
@@ -107,6 +110,46 @@ ShellRoot {
         return null
       }
 
+      function laneCycle(source, duration) {
+        return ((stageTime + source.row * 0.19) % duration + duration) % duration
+      }
+
+      function laneIsWarning(source) {
+        if (routeWarningLife > 0 && (source.kind === "vpn" || stage >= 4)) return true
+        if (source.kind === "ssh" && stage >= 3) {
+          var sshCycle = laneCycle(source, 4.8)
+          return sshCycle >= 2.9 && sshCycle < 3.45
+        }
+        if (source.kind === "firewall") {
+          var firewallCycle = laneCycle(source, 3.8)
+          return firewallCycle >= 1.85 && firewallCycle < 2.35
+        }
+        return false
+      }
+
+      function laneIsActive(source) {
+        if (source.kind === "ssh" && stage >= 3) {
+          var sshCycle = laneCycle(source, 4.8)
+          return sshCycle < 3.45 || sshCycle >= 4.25
+        }
+        if (source.kind === "firewall") {
+          var firewallCycle = laneCycle(source, 3.8)
+          return firewallCycle < 2.35
+        }
+        return true
+      }
+
+      function laneSpeedFactor(source) {
+        if (routeWarningLife > 0 && (source.kind === "vpn" || stage >= 4)) return 0.24
+        if (source.kind === "package") return laneCycle(source, 4.2) < 0.7 ? 0 : 1
+        if (source.kind === "service") return 0.78 + 0.42 * (0.5 + 0.5 * Math.sin(stageTime * 2.4 + source.row))
+        return 1
+      }
+
+      function dpiBeamX(source, item) {
+        return item.x + Math.sin(stageTime * 2.7 + source.row * 0.6) * item.width * 0.34
+      }
+
       function makeLane(row, type, kind, direction, speed, count, width) {
         var items = []
         var spacing = columns / count
@@ -117,6 +160,8 @@ ShellRoot {
       }
 
       function buildStage() {
+        routeWarningLife = 0
+        stageTime = 0
         var pace = 0.72 + Math.min(stage - 1, 5) * 0.13
         var networkKinds = stage === 1 ? ["pipe", "ssh", "container"]
                          : stage === 2 ? ["container", "vpn", "pipe"]
@@ -155,6 +200,7 @@ ShellRoot {
         leftHeld = rightHeld = upHeld = downHeld = false
         intentX = intentY = 0
         lastHopAt = -10000
+        lastNearMissAt = -10000
       }
 
       function startRun() {
@@ -200,6 +246,7 @@ ShellRoot {
         shell.play(hopSound)
         collectTtl()
         checkSafety()
+        if (mode === "playing" && dy < 0) awardNearMiss(lane(playerY))
         worldCanvas.requestPaint()
         return true
       }
@@ -245,10 +292,36 @@ ShellRoot {
       }
 
       function ridingItem(targetLane) {
-        if (!targetLane) return null
+        if (!targetLane || !laneIsActive(targetLane)) return null
         for (var i = 0; i < targetLane.items.length; i++)
           if (itemOverlap(targetLane.items[i], playerX, -0.08)) return targetLane.items[i]
         return null
+      }
+
+      function hazardOverlap(source, item, x, margin) {
+        if (!laneIsActive(source)) return false
+        if (source.kind === "window") return Math.abs(dpiBeamX(source, item) - x) <= 0.34 + margin
+        return itemOverlap(item, x, margin)
+      }
+
+      function awardNearMiss(source) {
+        if (!source || source.type !== "process" || Date.now() - lastNearMissAt < 450) return
+        var nearest = 99
+        for (var i = 0; i < source.items.length; i++) {
+          var item = source.items[i]
+          if (!laneIsActive(source)) continue
+          var clearance = source.kind === "window"
+                        ? Math.abs(dpiBeamX(source, item) - playerX) - 0.34
+                        : Math.abs(item.x - playerX) - item.width * spriteScale / 2
+          nearest = Math.min(nearest, clearance)
+        }
+        if (nearest > 0.05 && nearest < 0.34) {
+          var bonus = 75 + stage * 25
+          score += bonus
+          lastNearMissAt = Date.now()
+          statusMessage = "CLEAN HOP // NEAR MISS +" + bonus
+          shell.play(ttlSound)
+        }
       }
 
       function checkSafety() {
@@ -259,7 +332,7 @@ ShellRoot {
           if (!ridingItem(current)) dropPacket("NO CARRIER // PACKET LOST")
         } else {
           for (var i = 0; i < current.items.length; i++) {
-            if (itemOverlap(current.items[i], playerX, 0.16)) {
+            if (hazardOverlap(current, current.items[i], playerX, 0.16)) {
               dropPacket("PROCESS COLLISION // PACKET DROPPED")
               return
             }
@@ -346,7 +419,7 @@ ShellRoot {
         for (var l = 0; l < lanes.length; l++) {
           var source = lanes[l]
           var movedItems = []
-          var delta = source.direction * source.speed * dt
+          var delta = source.direction * source.speed * laneSpeedFactor(source) * dt
           for (var i = 0; i < source.items.length; i++) {
             var item = source.items[i]
             var x = item.x + delta
@@ -371,7 +444,7 @@ ShellRoot {
         var updated = []
         for (var i = 0; i < lanes.length; i++) {
           var source = lanes[i]
-          var shouldReverse = source.type === "network" || stage >= 4
+          var shouldReverse = source.kind === "vpn" || stage >= 4
           updated.push({ row: source.row, type: source.type, kind: source.kind,
                          direction: shouldReverse ? -source.direction : source.direction,
                          speed: source.speed, items: source.items })
@@ -379,6 +452,14 @@ ShellRoot {
         lanes = updated
         statusMessage = stage === 3 ? "VPN ROUTE ROTATED // RELAYS REVERSING"
                                     : "ROOT TABLE REBALANCED // ALL LANES REVERSE"
+        shell.play(ttlSound)
+      }
+
+      function queueRouteRebalance() {
+        if (mode !== "playing" || stage < 3 || routeWarningLife > 0) return
+        routeWarningLife = 1.15
+        statusMessage = stage === 3 ? "VPN ROUTE CHANGE // REVERSAL IN 1S"
+                                    : "ROOT TABLE UNSTABLE // REVERSAL IN 1S"
         shell.play(ttlSound)
       }
 
@@ -450,7 +531,7 @@ ShellRoot {
         interval: game.stage >= 4 ? 4800 : 6000
         repeat: true
         running: game.mode === "playing" && game.stage >= 3
-        onTriggered: game.rebalanceRoutes()
+        onTriggered: game.queueRouteRebalance()
       }
 
       Timer {
@@ -459,6 +540,11 @@ ShellRoot {
         running: true
         onTriggered: {
           game.animationTime += 0.016
+          if (game.mode === "playing") game.stageTime += 0.016
+          if (game.mode === "playing" && game.routeWarningLife > 0) {
+            game.routeWarningLife = Math.max(0, game.routeWarningLife - 0.016)
+            if (game.routeWarningLife <= 0) game.rebalanceRoutes()
+          }
           game.playerVisualX += (game.playerX - game.playerVisualX) * 0.25
           game.playerVisualY += (game.playerY - game.playerVisualY) * 0.25
           game.tickWorld(0.016)
@@ -717,10 +803,12 @@ ShellRoot {
               // readable without becoming collision-shaped foreground noise.
               for (var flowLane = 0; flowLane < game.lanes.length; flowLane++) {
                 var flow = game.lanes[flowLane]
-                var flowPhase = game.animationTime * flow.speed * flow.direction * 1.45
+                var flowPhase = game.animationTime * flow.speed * game.laneSpeedFactor(flow) * flow.direction * 1.45
                 var flowY = (flow.row + 0.5) * game.cellHeight
-                context.fillStyle = flow.type === "network" ? theme.accent : theme.orange
-                context.globalAlpha = flow.type === "network" ? 0.16 : 0.11
+                context.fillStyle = game.laneIsWarning(flow) ? theme.yellow
+                                  : flow.type === "network" ? theme.accent : theme.orange
+                context.globalAlpha = game.laneIsWarning(flow) ? 0.3
+                                    : flow.type === "network" ? 0.16 : 0.11
                 for (var marker = -1; marker <= game.columns + 1; marker += 2.5) {
                   var flowColumn = ((marker + flowPhase) % game.columns + game.columns) % game.columns
                   var flowX = (flowColumn + 0.5) * game.cellWidth
@@ -738,6 +826,20 @@ ShellRoot {
 
               for (var port = 0; port < game.ports.length; port++) {
                 var socket = game.ports[port]
+                if (game.mode === "binding" && Math.abs(socket.x - game.playerX) < 0.2) {
+                  var bindX = (socket.x + 0.5) * game.cellWidth
+                  var bindPulse = 0.55 + 0.35 * Math.sin(game.animationTime * 14)
+                  context.globalAlpha = bindPulse
+                  context.strokeStyle = theme.green
+                  context.lineWidth = 3
+                  context.beginPath()
+                  context.arc(bindX, game.cellHeight * 0.5, game.cellHeight * 0.48, 0, Math.PI * 2)
+                  context.stroke()
+                  context.globalAlpha = 0.22
+                  context.fillStyle = theme.green
+                  context.fillRect(bindX - 3, game.cellHeight * 0.72, 6, game.cellHeight * 1.05)
+                  context.globalAlpha = 1
+                }
                 game.drawSprite(context, socket.bound ? 1 : 0, 3,
                                 (socket.x + 0.5) * game.cellWidth, game.cellHeight * 0.5,
                                 game.cellWidth * 1.55, game.cellHeight * 1.38, 1, false)
@@ -749,12 +851,39 @@ ShellRoot {
                 var spriteColumn = traffic.kind === "service" || traffic.kind === "pipe" ? 0
                                  : traffic.kind === "package" || traffic.kind === "container" ? 1
                                  : traffic.kind === "window" || traffic.kind === "ssh" ? 2 : 3
+                var trafficActive = game.laneIsActive(traffic)
+                var trafficWarning = game.laneIsWarning(traffic)
+                if (trafficWarning) {
+                  context.globalAlpha = 0.08 + 0.05 * Math.sin(game.animationTime * 16)
+                  context.fillStyle = theme.yellow
+                  context.fillRect(0, traffic.row * game.cellHeight, width, game.cellHeight)
+                  context.globalAlpha = 1
+                }
                 for (var item = 0; item < traffic.items.length; item++) {
                   var vehicle = traffic.items[item]
+                  var spriteOpacity = trafficActive ? (trafficWarning ? 0.62 + 0.28 * Math.sin(game.animationTime * 14) : 1) : 0.2
                   game.drawSprite(context, spriteColumn, spriteRow,
                                   (vehicle.x + 0.5) * game.cellWidth, (traffic.row + 0.5) * game.cellHeight,
                                   game.cellWidth * vehicle.width, game.cellHeight * 1.18,
-                                  1, traffic.direction < 0)
+                                  spriteOpacity, traffic.direction < 0)
+
+                  if (traffic.kind === "window") {
+                    var beamX = (game.dpiBeamX(traffic, vehicle) + 0.5) * game.cellWidth
+                    context.globalAlpha = 0.58 + 0.24 * Math.sin(game.animationTime * 12)
+                    context.fillStyle = theme.accent
+                    context.fillRect(beamX - 2, (traffic.row + 0.12) * game.cellHeight, 4, game.cellHeight * 0.76)
+                    context.globalAlpha = 0.18
+                    context.fillRect(beamX - game.cellWidth * 0.18, (traffic.row + 0.22) * game.cellHeight,
+                                     game.cellWidth * 0.36, game.cellHeight * 0.56)
+                    context.globalAlpha = 1
+                  } else if (traffic.kind === "package" && game.laneSpeedFactor(traffic) === 0) {
+                    var switchX = (vehicle.x + 0.5) * game.cellWidth
+                    context.globalAlpha = 0.7
+                    context.fillStyle = theme.yellow
+                    for (var bufferBit = -1; bufferBit <= 1; bufferBit++)
+                      context.fillRect(switchX + bufferBit * 8 - 2, (traffic.row + 0.16) * game.cellHeight, 4, 4)
+                    context.globalAlpha = 1
+                  }
                 }
               }
 
@@ -767,6 +896,16 @@ ShellRoot {
               var py = (game.playerVisualY + 0.5) * game.cellHeight
               var courierFrame = game.mode === "binding" ? 2 : game.mode === "dropping" ? 3 : Math.floor(game.animationTime * 5) % 2
               var courierScale = game.mode === "dropping" ? 1.9 : 1.38
+              var trailDX = game.playerVisualX - game.playerX
+              var trailDY = game.playerVisualY - game.playerY
+              if (game.mode === "playing" && Math.abs(trailDX) + Math.abs(trailDY) > 0.04) {
+                for (var ghost = 3; ghost >= 1; ghost--)
+                  game.drawSprite(context, courierFrame, 0,
+                                  px + trailDX * game.cellWidth * ghost * 0.28,
+                                  py + trailDY * game.cellHeight * ghost * 0.28,
+                                  game.cellWidth * courierScale, game.cellHeight * courierScale,
+                                  0.04 + ghost * 0.035, false)
+              }
               game.drawSprite(context, courierFrame, 0, px, py,
                               game.cellWidth * courierScale, game.cellHeight * courierScale,
                               game.mode === "dropping" ? Math.max(0.25, game.transitionLife / 0.85) : 1, false)
