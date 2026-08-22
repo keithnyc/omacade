@@ -520,15 +520,18 @@ ShellRoot {
           anchors.right: parent.right
           anchors.top: hud.bottom
           anchors.bottom: footer.top
+          readonly property real sideGutterWidth: Math.max(0, (width - playfield.width) / 2 - 24)
+          readonly property real verticalGutterHeight: Math.max(0, (height - playfield.height) / 2)
+          readonly property bool compactTelemetry: sideGutterWidth < 150 && verticalGutterHeight >= 58
 
           Rectangle {
             id: ingressRail
-            visible: width >= 150
+            visible: playfieldSlot.sideGutterWidth >= 150
             anchors.left: parent.left
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             anchors.margins: 12
-            width: Math.max(0, (parent.width - playfield.width) / 2 - 24)
+            width: playfieldSlot.sideGutterWidth
             color: theme.surface
             border.color: theme.muted
             border.width: 1
@@ -567,12 +570,12 @@ ShellRoot {
 
           Rectangle {
             id: egressRail
-            visible: width >= 150
+            visible: playfieldSlot.sideGutterWidth >= 150
             anchors.right: parent.right
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             anchors.margins: 12
-            width: Math.max(0, (parent.width - playfield.width) / 2 - 24)
+            width: playfieldSlot.sideGutterWidth
             color: theme.surface
             border.color: theme.muted
             border.width: 1
@@ -603,6 +606,73 @@ ShellRoot {
               Rectangle { width: parent.width; height: 1; color: theme.muted }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "TTL  " + Math.ceil(game.ttl); color: game.ttl < 10 ? theme.red : theme.yellow; font.pixelSize: 18; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "ROUTE TABLE // " + game.stage; color: theme.muted; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+            }
+          }
+
+          Rectangle {
+            id: compactIngressRail
+            visible: playfieldSlot.compactTelemetry
+            anchors.top: parent.top
+            anchors.topMargin: 10
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: playfield.width
+            height: Math.min(66, playfieldSlot.verticalGutterHeight - 18)
+            color: theme.surface
+            border.color: theme.muted
+            border.width: 1
+
+            Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 2; color: theme.accent; opacity: 0.5 }
+            Row {
+              anchors.centerIn: parent
+              spacing: 17
+              Text { text: "// INGRESS"; color: theme.accent; font.pixelSize: 11; font.family: "monospace"; font.bold: true; font.letterSpacing: 1.4 }
+              Text { text: game.zoneName; color: theme.green; font.pixelSize: 14; font.family: "monospace"; font.bold: true }
+              Rectangle { width: 1; height: 24; color: theme.muted; anchors.verticalCenter: parent.verticalCenter }
+              Repeater {
+                model: 8
+                delegate: Text {
+                  required property int index
+                  text: index < game.lanes.length ? "L" + game.lanes[index].row + (game.lanes[index].direction > 0 ? "→" : "←") : "--"
+                  color: index < game.lanes.length && game.lanes[index].type === "network" ? theme.accent : theme.orange
+                  font.pixelSize: 9; font.family: "monospace"; font.bold: true
+                }
+              }
+              Rectangle { width: 1; height: 24; color: theme.muted; anchors.verticalCenter: parent.verticalCenter }
+              Text { text: "STACK ONLINE"; color: theme.foreground; font.pixelSize: 9; font.family: "monospace"; font.bold: true }
+            }
+          }
+
+          Rectangle {
+            id: compactEgressRail
+            visible: playfieldSlot.compactTelemetry
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 10
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: playfield.width
+            height: Math.min(66, playfieldSlot.verticalGutterHeight - 18)
+            color: theme.surface
+            border.color: theme.muted
+            border.width: 1
+
+            Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; height: 2; color: theme.green; opacity: 0.5 }
+            Row {
+              anchors.centerIn: parent
+              spacing: 18
+              Text { text: "EGRESS //"; color: theme.green; font.pixelSize: 11; font.family: "monospace"; font.bold: true; font.letterSpacing: 1.4 }
+              Text { text: "ROOT PORTS"; color: theme.foreground; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Repeater {
+                model: 5
+                delegate: Rectangle {
+                  required property int index
+                  width: 28; height: 8; radius: 4
+                  color: index < game.ports.length && game.ports[index].bound ? theme.green : theme.surfaceRaised
+                  border.color: index < game.ports.length && game.ports[index].bound ? theme.green : theme.muted
+                  border.width: 1
+                }
+              }
+              Rectangle { width: 1; height: 24; color: theme.muted; anchors.verticalCenter: parent.verticalCenter }
+              Text { text: "TTL  " + Math.ceil(game.ttl); color: game.ttl < 10 ? theme.red : theme.yellow; font.pixelSize: 13; font.family: "monospace"; font.bold: true }
+              Text { text: "TABLE // " + game.stage; color: theme.muted; font.pixelSize: 9; font.family: "monospace"; font.bold: true }
             }
           }
 

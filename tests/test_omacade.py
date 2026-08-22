@@ -342,6 +342,9 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn('text: "// INGRESS"', packet_hop)
         self.assertIn('text: "EGRESS //"', packet_hop)
         self.assertIn('text: "ROOT PORTS"', packet_hop)
+        self.assertIn("readonly property bool compactTelemetry:", packet_hop)
+        self.assertIn("id: compactIngressRail", packet_hop)
+        self.assertIn("id: compactEgressRail", packet_hop)
         self.assertIn("var flowPhase = game.animationTime * flow.speed * flow.direction * 1.45", packet_hop)
         self.assertIn("anchors.topMargin: game.cellHeight + 8", packet_hop)
 
