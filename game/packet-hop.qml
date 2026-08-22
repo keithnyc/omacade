@@ -515,11 +515,12 @@ ShellRoot {
 
         Item {
           id: playfield
-          anchors.left: parent.left
-          anchors.right: parent.right
           anchors.top: hud.bottom
           anchors.bottom: footer.top
-          anchors.margins: 12
+          anchors.topMargin: 12
+          anchors.bottomMargin: 12
+          anchors.horizontalCenter: parent.horizontalCenter
+          width: Math.min(parent.width - 24, height * 1.7)
           clip: true
 
           Canvas {
@@ -548,6 +549,29 @@ ShellRoot {
                 context.moveTo(0, y + game.cellHeight)
                 context.lineTo(width, y + game.cellHeight)
                 context.stroke()
+                context.globalAlpha = 1
+              }
+
+              // Faint packet pulses make route direction and relative speed
+              // readable without becoming collision-shaped foreground noise.
+              for (var flowLane = 0; flowLane < game.lanes.length; flowLane++) {
+                var flow = game.lanes[flowLane]
+                var flowPhase = game.animationTime * flow.speed * flow.direction * 1.45
+                var flowY = (flow.row + 0.5) * game.cellHeight
+                context.fillStyle = flow.type === "network" ? theme.accent : theme.orange
+                context.globalAlpha = flow.type === "network" ? 0.16 : 0.11
+                for (var marker = -1; marker <= game.columns + 1; marker += 2.5) {
+                  var flowColumn = ((marker + flowPhase) % game.columns + game.columns) % game.columns
+                  var flowX = (flowColumn + 0.5) * game.cellWidth
+                  var tail = game.cellWidth * 0.12
+                  context.fillRect(flowX - tail / 2, flowY - 1, tail, 2)
+                  context.beginPath()
+                  context.moveTo(flowX + flow.direction * tail * 0.85, flowY)
+                  context.lineTo(flowX + flow.direction * tail * 0.42, flowY - 3)
+                  context.lineTo(flowX + flow.direction * tail * 0.42, flowY + 3)
+                  context.closePath()
+                  context.fill()
+                }
                 context.globalAlpha = 1
               }
 
@@ -592,7 +616,8 @@ ShellRoot {
             visible: game.mode === "playing" && game.statusMessage.length > 0
             anchors.top: parent.top
             anchors.right: parent.right
-            anchors.margins: 9
+            anchors.topMargin: game.cellHeight + 8
+            anchors.rightMargin: 9
             width: Math.min(parent.width - 18, routeStatus.implicitWidth + 22)
             height: 29
             radius: 5

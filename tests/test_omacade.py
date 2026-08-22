@@ -336,6 +336,9 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn('Qt.resolvedUrl("assets/packet-hop-sprites-v2.png")', packet_hop)
         self.assertIn("readonly property real spriteScale: 0.76", packet_hop)
         self.assertIn("item.width * spriteScale / 2", packet_hop)
+        self.assertIn("width: Math.min(parent.width - 24, height * 1.7)", packet_hop)
+        self.assertIn("var flowPhase = game.animationTime * flow.speed * flow.direction * 1.45", packet_hop)
+        self.assertIn("anchors.topMargin: game.cellHeight + 8", packet_hop)
 
         packet_sprite = (ROOT / "game" / "assets" / "packet-hop-sprites-v2.png").read_bytes()
         self.assertEqual(packet_sprite[:8], b"\x89PNG\r\n\x1a\n")
