@@ -333,11 +333,11 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn('stage === 2 ? ["service", "firewall"', packet_hop)
         self.assertIn("function rebalanceRoutes()", packet_hop)
         self.assertIn("game.stage >= 4 ? 4800 : 6000", packet_hop)
-        self.assertIn('Qt.resolvedUrl("assets/packet-hop-sprites.png")', packet_hop)
+        self.assertIn('Qt.resolvedUrl("assets/packet-hop-sprites-v2.png")', packet_hop)
         self.assertIn("readonly property real spriteScale: 0.76", packet_hop)
         self.assertIn("item.width * spriteScale / 2", packet_hop)
 
-        packet_sprite = (ROOT / "game" / "assets" / "packet-hop-sprites.png").read_bytes()
+        packet_sprite = (ROOT / "game" / "assets" / "packet-hop-sprites-v2.png").read_bytes()
         self.assertEqual(packet_sprite[:8], b"\x89PNG\r\n\x1a\n")
         self.assertEqual(int.from_bytes(packet_sprite[16:20], "big"), 1254)
         self.assertEqual(int.from_bytes(packet_sprite[20:24], "big"), 1254)

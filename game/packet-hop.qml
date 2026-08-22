@@ -40,7 +40,7 @@ ShellRoot {
 
       readonly property int columns: 15
       readonly property int rows: 12
-      readonly property url spriteAtlas: Qt.resolvedUrl("assets/packet-hop-sprites.png")
+      readonly property url spriteAtlas: Qt.resolvedUrl("assets/packet-hop-sprites-v2.png")
       readonly property real spriteCell: 313.5
       readonly property real spriteScale: 0.76
       readonly property string zoneName: stage === 1 ? "/LAN" : stage === 2 ? "/WAN" : stage === 3 ? "/VPN" : "/ROOT"
@@ -619,7 +619,7 @@ ShellRoot {
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: shell.cabinet.displayTitle; color: theme.foreground; font.pixelSize: 37; font.bold: true; font.letterSpacing: 3 }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: shell.cabinet.tagline.toUpperCase(); color: theme.green; font.pixelSize: 13; font.family: "monospace" }
               Rectangle { width: parent.width; height: 1; color: theme.muted }
-              Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; text: "ROUTE A COURIER PACKET ACROSS HOSTILE PROCESS LANES.\nRIDE DATA PIPES AND CONTAINERS. BIND ALL FIVE ROOT PORTS."; color: theme.foreground; font.pixelSize: 14; font.family: "monospace"; lineHeight: 1.32 }
+              Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; text: "ROUTE A COURIER PACKET ACROSS HOSTILE PROCESS LANES.\nRIDE DATA STREAMS AND ENCRYPTED TUNNELS. BIND ALL FIVE ROOT PORTS."; color: theme.foreground; font.pixelSize: 14; font.family: "monospace"; lineHeight: 1.32 }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "SERVICE / PACMAN / HYPR TRAFFIC  ·  TTL IS TICKING"; color: theme.orange; font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "← ↑ ↓ →  HOP / ROUTE"; color: theme.muted; font.pixelSize: 12; font.family: "monospace" }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "BEST " + arcadeData.bestScore + "   ·   FURTHEST " + arcadeData.highestStage; color: theme.yellow; font.pixelSize: 13; font.family: "monospace"; font.bold: true }

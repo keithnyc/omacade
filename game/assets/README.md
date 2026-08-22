@@ -40,6 +40,14 @@ atlas generated with OpenAI's built-in image generation tool for Cabinet 03.
 It contains courier packet states, process traffic, network carriers, root
 sockets, TTL pickup, and routing effects.
 
+`packet-hop-sprites-v2.png` is the production atlas. It preserves the courier
+packet, firewall, fiber, encrypted-tunnel, VPN-relay, port, TTL, and routing
+cells from the original atlas. Four industrial-looking cells were replaced
+with a corrupted-packet stream, rack switch, deep-packet-inspection scanner,
+and segmented Ethernet-frame carrier. The four replacements were generated
+with the built-in image generation tool, their preview checkerboard was removed,
+and only those cells were composited over the original transparent atlas.
+
 Final generation prompt:
 
 > Create one exact 4 by 4 transparent sprite atlas for the Omacade PACKET//HOP
@@ -49,6 +57,18 @@ Final generation prompt:
 > blue SSH tunnel, and orange VPN platforms; empty and filled green sockets, a
 > yellow TTL clock, and a cyan routing burst. Keep every subject isolated and
 > centered in an equal cell with no grid, labels, text, UI, or watermark.
+
+Final v2 edit prompt:
+
+> Edit the supplied atlas in place while preserving its exact 1254×1254 4×4
+> geometry, transparent background, cell boundaries, scale, neon pixel-art
+> style, and readability at 30–56 pixels. Preserve rows one and four exactly,
+> plus the firewall, fiber conduit, encrypted tunnel, and VPN relay. Replace
+> only row two columns one through three with a corrupted red packet convoy,
+> an orange rack switch with Ethernet ports and activity lights, and a magenta
+> deep-packet-inspection scanner. Replace row three column two with a segmented
+> teal Ethernet-frame carrier. Use unmistakable networking cues; no vehicles,
+> shipping containers, desktop windows, text, logos, or art crossing cells.
 
 ## Sound effects
 
