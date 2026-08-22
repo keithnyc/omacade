@@ -1,7 +1,8 @@
 # Omacade
 
 **Insert no coins.** Omacade is a modular, theme-aware arcade for
-[Omarchy](https://omarchy.org/). Version 0.1 ships its first cabinet: **Lander**.
+[Omarchy](https://omarchy.org/). Version 0.1 includes polished Cabinet 01,
+**Lander**, and the playable Cabinet 02 prototype, **Rootbound**.
 
 Lander is an original graphical game inspired by the broad lunar-landing genre.
 Rotate, manage a limited fuel supply, and settle both feet onto a marked pad.
@@ -83,6 +84,12 @@ omacade-gui lander
 
 The original terminal cabinet remains available with `omacade lander`.
 
+Rootbound can also be launched directly while it is under development:
+
+```sh
+omacade-gui rootbound
+```
+
 ## Local development
 
 From the parent directory of this checkout, link it under its manifest ID:
@@ -133,9 +140,8 @@ omarchy plugin remove io.github.keithnyc.omacade
 
 ## Roadmap
 
-The framework is ready for Cabinet 02. The next cabinet should be an original
-digging/chase game—not a copy of another game's characters, levels, art, music,
-or name.
+Cabinet 02, Rootbound, now has its first playable vertical slice. Next work is
+gameplay tuning, original sound design, enemy variety, and richer stage goals.
 
 ## License
 

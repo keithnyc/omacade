@@ -15,6 +15,21 @@ var cabinets = [
     accent: "green",
     status: "ready",
     controls: "← → ROTATE   ·   ↑ / SPACE THRUST"
+  },
+  {
+    id: "rootbound",
+    number: "02",
+    title: "Rootbound",
+    displayTitle: "R O O T B O U N D",
+    shortTitle: "ROOTBOUND",
+    windowTitle: "Omacade Rootbound",
+    tagline: "Dig deep. Purge rogue daemons.",
+    description: "Carve filesystem tunnels, recover package shards, and keep root clean.",
+    entry: "rootbound.qml",
+    scoreKey: "rootbound",
+    accent: "yellow",
+    status: "ready",
+    controls: "← ↑ ↓ → DIG   ·   SPACE SUDO PURGE"
   }
 ]
 

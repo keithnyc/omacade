@@ -13,9 +13,10 @@ cabinet=${1:-arcade}
 case "$cabinet" in
   arcade) target="$root/game/arcade.qml" ;;
   lander) target="$root/game/shell.qml" ;;
+  rootbound) target="$root/game/rootbound.qml" ;;
   *)
     printf 'Unknown Omacade cabinet: %s\n' "$cabinet" >&2
-    printf 'Available: arcade, lander\n' >&2
+    printf 'Available: arcade, lander, rootbound\n' >&2
     exit 2
     ;;
 esac

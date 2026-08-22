@@ -263,15 +263,25 @@ class OmacadeTests(unittest.TestCase):
 
         self.assertIn('id: "lander"', registry)
         self.assertIn('entry: "shell.qml"', registry)
+        self.assertIn('id: "rootbound"', registry)
+        self.assertIn('entry: "rootbound.qml"', registry)
         self.assertIn("function recordScore(entry)", runtime)
         self.assertIn("property color accent", theme)
         self.assertIn("CabinetRegistry.cabinets", lobby)
         self.assertIn('title: "Omacade"', lobby)
         self.assertIn('arcade) target="$root/game/arcade.qml"', launcher)
         self.assertIn('lander) target="$root/game/shell.qml"', launcher)
+        self.assertIn('rootbound) target="$root/game/rootbound.qml"', launcher)
         self.assertIn("Exec=omarchy-launch-or-focus Omacade omacade-gui", desktop)
         self.assertIn('CabinetRegistry.byId("lander")', lander)
         self.assertIn("ArcadeData { id: arcadeData", lander)
+
+        rootbound = (ROOT / "game" / "rootbound.qml").read_text(encoding="utf-8")
+        self.assertIn('CabinetRegistry.byId("rootbound")', rootbound)
+        self.assertIn("function movePlayer(dx, dy)", rootbound)
+        self.assertIn("function moveEnemies()", rootbound)
+        self.assertIn("function purge()", rootbound)
+        self.assertIn('cabinetId: shell.cabinet.scoreKey', rootbound)
 
     def test_flight_renderer_stays_inside_terminal_width(self) -> None:
         Settings = self.module["Settings"]

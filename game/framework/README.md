@@ -25,7 +25,9 @@ lobby automatically.
 
 ## Adding Cabinet 02
 
-1. Create its QML and assets under `game/cabinets/<id>/`.
+1. Create its executable entrypoint as `game/<id>.qml`; Quickshell uses the
+   entrypoint directory as its import boundary. Put supporting components and
+   assets under `game/cabinets/<id>/` as the cabinet grows.
 2. Add one metadata object to `CabinetRegistry.js`.
 3. Use `ArcadeTheme` and `ArcadeData { cabinetId: "<scoreKey>" }`.
 4. Store score rows through `ArcadeData.recordScore()`.

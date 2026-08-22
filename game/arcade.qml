@@ -233,19 +233,27 @@ ShellRoot {
             }
 
             Rectangle {
+              property int previewIndex: arcade.cabinets.length > 1
+                ? (arcade.selectedIndex + 1) % arcade.cabinets.length : arcade.selectedIndex
               width: (parent.width - parent.spacing) / 2
               height: parent.height
               radius: 12
               color: theme.surface
-              opacity: 0.72
+              opacity: 0.78
               border.color: theme.muted
               border.width: 1
               Column {
-                anchors.centerIn: parent
-                spacing: 16
-                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "CABINET 02"; color: theme.muted; font.pixelSize: 14; font.family: "monospace"; font.bold: true }
-                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "READY FOR INSTALLATION"; color: theme.foreground; font.pixelSize: 20; font.family: "monospace"; font.bold: true }
-                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "NEW GAME MODULE GOES HERE"; color: theme.muted; font.pixelSize: 12; font.family: "monospace" }
+                anchors.fill: parent
+                anchors.margins: 28
+                spacing: 14
+                Text { text: "CABINET " + arcade.cabinets[parent.parent.previewIndex].number; color: theme.muted; font.pixelSize: 13; font.family: "monospace"; font.bold: true }
+                Text { width: parent.width; text: arcade.cabinets[parent.parent.previewIndex].displayTitle; wrapMode: Text.WordWrap; color: theme.foreground; font.pixelSize: 27; font.bold: true; font.letterSpacing: 2 }
+                Text { width: parent.width; text: arcade.cabinets[parent.parent.previewIndex].tagline.toUpperCase(); wrapMode: Text.WordWrap; color: theme.yellow; font.pixelSize: 13; font.family: "monospace" }
+                Rectangle { width: parent.width; height: 1; color: theme.muted; opacity: 0.6 }
+                Text { width: parent.width; text: arcade.cabinets[parent.parent.previewIndex].description; wrapMode: Text.WordWrap; color: theme.foreground; font.pixelSize: 15; lineHeight: 1.25 }
+                Text { width: parent.width; text: arcade.cabinets[parent.parent.previewIndex].controls; wrapMode: Text.WordWrap; color: theme.muted; font.pixelSize: 12; font.family: "monospace" }
+                Item { width: 1; height: 12 }
+                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "← / →  SELECT CABINET"; color: theme.accent; font.pixelSize: 15; font.family: "monospace"; font.bold: true }
               }
             }
           }
