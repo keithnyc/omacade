@@ -48,13 +48,24 @@ and segmented Ethernet-frame carrier. The four replacements were generated
 with the built-in image generation tool, their preview checkerboard was removed,
 and only those cells were composited over the original transparent atlas.
 
-`packet-hop-sprites-v3.png` is the production atlas. It removes residual
+`packet-hop-sprites-v3.png` removes residual
 industrial silhouettes that survived beneath four v2 replacements. The new
 corrupted-packet swarm contains only fragmented data frames; the buffering
 switch is a clean rack appliance; the DPI hazard is a stationary scanner gate;
 and the rideable Ethernet carrier is a flat chain of linked frames. A grayscale
 alpha mask explicitly cleared those four old cells before the replacements were
 composited, preventing hidden crawler, wheel, cargo, or container pixels.
+
+`packet-hop-sprites-v4.png` replaces v3's visually
+noisy red packet swarm with two large hostile red packet cubes that deliberately
+echo the cyan courier's box silhouette. The lead packet is intact; the trailing
+packet has a broken corner and a short glitch trail. Only row two column one was
+changed, using the same explicit alpha-mask compositing workflow as v3.
+
+`packet-hop-sprites-v5.png` is the production atlas. Because the game repeats
+each atlas cell for every traffic entity, its red hazard cell now contains one
+centered hostile packet cube rather than a pre-doubled pair. A damaged rear
+corner and tiny bit trail keep the corruption inside that single silhouette.
 
 Final generation prompt:
 
@@ -90,6 +101,26 @@ Final v3 edit prompt:
 > pixel-art style. No chassis, wheels, tracks, antenna mast, forklift, cargo,
 > shipping container, road vehicle, rocket, exhaust, desktop window, text,
 > logos, watermark, checkerboard, or art crossing cells.
+
+Final v4 edit prompt:
+
+> Change only row two column one. Replace the fragmented swarm with exactly two
+> dominant red packet cubes traveling horizontally. Echo the courier cube's
+> chunky isometric box, bright payload face, and reinforced corners. Keep the
+> lead packet intact; give the trailing packet one broken corner, a few detached
+> square bits, and a very short glitch trail. It must read at 30–56 pixels tall.
+> No small abstract swarm, chassis, wheels, tracks, vehicle, antenna, character,
+> text, logo, checkerboard, or changes outside the target cell.
+
+Final v5 edit prompt:
+
+> Edit this exact 1254x1254 transparent 4x4 pixel-art sprite atlas. Preserve
+> every pixel outside row 2, column 1. Replace the current pair with exactly one
+> centered hostile red packet cube. Match the cyan courier cube's visual
+> language: bright red payload face, dark reinforced metallic corners, crisp
+> square silhouette, and a small corrupted rear corner integrated into the same
+> cube. Do not draw a second cube, duplicate, companion, trailer, vehicle, or
+> long trail. Keep generous transparent padding and preserve the atlas geometry.
 
 ## Sound effects
 
