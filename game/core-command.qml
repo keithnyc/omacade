@@ -63,12 +63,14 @@ ShellRoot {
       property real animationTime: 0
       property real impactFlash: 0
       property real chainLife: 0
+      property real launchBusCooldown: 0
       property string chainText: ""
       property string statusMessage: "DEFENSE GRID READY"
       property bool leftHeld: false
       property bool rightHeld: false
       property bool upHeld: false
       property bool downHeld: false
+      property var firewallCooldowns: [0, 0, 0]
       property var services: []
       property var batteries: []
       property var threats: []
@@ -139,6 +141,8 @@ ShellRoot {
         crosshairX = 500
         crosshairY = 245
         leftHeld = rightHeld = upHeld = downHeld = false
+        firewallCooldowns = [0, 0, 0]
+        launchBusCooldown = 0
         var ammoBase = Math.max(7, 11 - Math.floor((wave - 1) / 3))
         batteries = [
           { x: 48, alive: true, ammo: ammoBase },
@@ -206,18 +210,37 @@ ShellRoot {
         var distance = 99999
         for (var i = 0; i < batteries.length; i++) {
           if (!batteries[i].alive || batteries[i].ammo <= 0) continue
+          if (firewallCooldowns[i] > 0 || inFlightForBattery(i) >= 2) continue
           var gap = Math.abs(batteries[i].x - targetX)
           if (gap < distance) { choice = i; distance = gap }
         }
         return choice
       }
 
+      function inFlightForBattery(index) {
+        var count = 0
+        for (var i = 0; i < interceptors.length; i++) if (interceptors[i].batteryIndex === index) count += 1
+        return count
+      }
+
       function fireAt(x, y) {
         if (mode !== "playing") return
+        if (launchBusCooldown > 0) {
+          statusMessage = "LAUNCH BUS CYCLING // HOLD FIRE"
+          return
+        }
         var batteryIndex = chooseBattery(x)
         if (batteryIndex < 0) {
-          statusMessage = "NO FIREWALL RULES // AMMO DEPLETED"
-          shell.play(impactSound)
+          statusMessage = totalAmmo > 0 ? "FIREWALL GRID BUSY // SWITCH NODE OR HOLD" : "NO FIREWALL RULES // AMMO DEPLETED"
+          if (totalAmmo <= 0) shell.play(impactSound)
+          return
+        }
+        if (firewallCooldowns[batteryIndex] > 0) {
+          statusMessage = "FW-" + (batteryIndex + 1) + " RECHARGING // SWITCH NODE"
+          return
+        }
+        if (inFlightForBattery(batteryIndex) >= 2) {
+          statusMessage = "FW-" + (batteryIndex + 1) + " QUEUE FULL // TWO IN FLIGHT"
           return
         }
         var updatedBatteries = batteries.slice(0)
@@ -227,8 +250,13 @@ ShellRoot {
         var updatedInterceptors = interceptors.slice(0)
         updatedInterceptors.push({ x: battery.x, y: groundY - 18, sx: battery.x, sy: groundY - 18,
                                    tx: Math.max(25, Math.min(worldWidth - 25, x)),
-                                   ty: Math.max(45, Math.min(groundY - 65, y)), speed: 430 })
+                                   ty: Math.max(45, Math.min(groundY - 65, y)), speed: 430,
+                                   batteryIndex: batteryIndex })
         interceptors = updatedInterceptors
+        var updatedCooldowns = firewallCooldowns.slice(0)
+        updatedCooldowns[batteryIndex] = 0.24
+        firewallCooldowns = updatedCooldowns
+        launchBusCooldown = 0.14
         shotsFired += 1
         statusMessage = "QUARANTINE LAUNCHED // FW-" + (batteryIndex + 1)
         shell.play(launchSound)
@@ -303,7 +331,8 @@ ShellRoot {
             shell.play(blastSound)
           } else {
             active.push({ x: shot.x + dx / distance * step, y: shot.y + dy / distance * step,
-                          sx: shot.sx, sy: shot.sy, tx: shot.tx, ty: shot.ty, speed: shot.speed })
+                          sx: shot.sx, sy: shot.sy, tx: shot.tx, ty: shot.ty, speed: shot.speed,
+                          batteryIndex: shot.batteryIndex })
           }
         }
         interceptors = active
@@ -373,7 +402,7 @@ ShellRoot {
       function beginWaveClear() {
         if (mode !== "playing") return
         var serviceBonus = onlineServices * 350
-        var ammoBonus = totalAmmo * 25
+        var ammoBonus = totalAmmo * 55
         if (onlineServices === services.length) perfectWaves += 1
         score += serviceBonus + ammoBonus
         interceptors = []
@@ -421,6 +450,11 @@ ShellRoot {
         chainLife = Math.max(0, chainLife - dt)
         if (chainLife <= 0) currentChain = 0
         if (mode !== "playing") return
+
+        var cooled = firewallCooldowns.slice(0)
+        for (var cooldown = 0; cooldown < cooled.length; cooldown++) cooled[cooldown] = Math.max(0, cooled[cooldown] - dt)
+        firewallCooldowns = cooled
+        launchBusCooldown = Math.max(0, launchBusCooldown - dt)
 
         var reticleSpeed = 285 * dt
         if (leftHeld) crosshairX -= reticleSpeed
@@ -726,6 +760,7 @@ ShellRoot {
 
               for (var b = 0; b < game.batteries.length; b++) {
                 var battery = game.batteries[b]
+                var batteryQueue = game.inFlightForBattery(b)
                 context.globalAlpha = battery.alive ? 1 : 0.24
                 context.fillStyle = b === game.selectedBattery ? theme.yellow : theme.accent
                 context.strokeStyle = b === game.selectedBattery ? theme.yellow : theme.foreground
@@ -740,6 +775,18 @@ ShellRoot {
                 context.fillStyle = theme.muted
                 context.font = "bold 9px monospace"
                 context.fillText("FW-" + (b + 1), battery.x, game.groundY + 31)
+                if (battery.alive) {
+                  context.fillStyle = theme.background
+                  context.fillRect(battery.x - 21, game.groundY - 50, 42, 4)
+                  context.fillStyle = game.firewallCooldowns[b] > 0 ? theme.orange : theme.green
+                  context.fillRect(battery.x - 20, game.groundY - 49, 40 * (1 - game.firewallCooldowns[b] / 0.24), 2)
+                  for (var queue = 0; queue < 2; queue++) {
+                    context.fillStyle = queue < batteryQueue ? theme.yellow : theme.muted
+                    context.globalAlpha = queue < batteryQueue ? 0.9 : 0.25
+                    context.beginPath(); context.arc(battery.x - 5 + queue * 10, game.groundY + 42, 2.5, 0, Math.PI * 2); context.fill()
+                  }
+                  context.globalAlpha = 1
+                }
               }
               context.globalAlpha = 1
 
@@ -813,7 +860,7 @@ ShellRoot {
               Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; text: "DEFEND SIX CRITICAL SERVICES WITH THREE FIREWALL NODES.\nDETONATE QUARANTINE FIELDS AND CHAIN THREATS TOGETHER."; color: theme.foreground; font.pixelSize: 14; font.family: "monospace"; lineHeight: 1.3 }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "FORK BOMBS SPLIT  ·  STEALTH PAYLOADS PHASE  ·  ROOTKITS DIVE"; color: theme.orange; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "MOUSE AIM / CLICK FIRE  ·  ARROWS AIM / SPACE FIRE"; color: theme.muted; font.pixelSize: 11; font.family: "monospace" }
-              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "1 / 2 / 3 FIREWALL  ·  0 AUTO"; color: theme.muted; font.pixelSize: 11; font.family: "monospace" }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "1 / 2 / 3 FIREWALL  ·  0 AUTO  ·  2 IN FLIGHT PER NODE"; color: theme.muted; font.pixelSize: 11; font.family: "monospace" }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "BEST " + arcadeData.bestScore + "   ·   FURTHEST WAVE " + arcadeData.highestStage; color: theme.yellow; font.pixelSize: 13; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "PRESS ENTER TO ARM"; color: theme.accent; font.pixelSize: 18; font.family: "monospace"; font.bold: true
                 SequentialAnimation on opacity {
