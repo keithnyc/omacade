@@ -119,13 +119,17 @@ ShellRoot {
         }
       }
 
-      function drawSprite(context, column, row, centerX, centerY, drawWidth, drawHeight, opacity) {
+      function drawSprite(context, column, row, centerX, centerY, drawWidth, drawHeight,
+                          opacity, flipX, flipY) {
         if (!worldCanvas.isImageLoaded(spriteAtlas)) return false
+        context.save()
         context.globalAlpha = opacity === undefined ? 1 : opacity
+        context.translate(centerX, centerY)
+        context.scale(flipX ? -1 : 1, flipY ? -1 : 1)
         context.drawImage(spriteAtlas,
                           column * spriteCell, row * spriteCell, spriteCell, spriteCell,
-                          centerX - drawWidth / 2, centerY - drawHeight / 2, drawWidth, drawHeight)
-        context.globalAlpha = 1
+                          -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight)
+        context.restore()
         return true
       }
 
@@ -742,10 +746,13 @@ ShellRoot {
               var playerCenterX = (game.playerVisualX + 0.5) * game.cellWidth
               var playerCenterY = (game.playerVisualY + 0.5) * game.cellHeight
               var playerRadius = Math.min(game.cellWidth, game.cellHeight) * 0.38
-              var playerFrame = game.facingY < 0 ? 0 : game.facingX > 0 ? 1
-                              : game.facingY > 0 ? 2 : 3
+              var playerHorizontal = game.facingX !== 0
+              var playerFrame = playerHorizontal ? 1 : 0
+              var playerFlipX = playerHorizontal && game.facingX < 0
+              var playerFlipY = !playerHorizontal && game.facingY > 0
               if (!game.drawSprite(context, playerFrame, 0, playerCenterX, playerCenterY,
-                                   game.cellWidth * 1.72, game.cellHeight * 1.72, 1)) {
+                                   game.cellWidth * 1.72, game.cellHeight * 1.72, 1,
+                                   playerFlipX, playerFlipY)) {
                 context.fillStyle = theme.accent
                 context.fillRect(playerCenterX - playerRadius, playerCenterY - playerRadius,
                                  playerRadius * 2, playerRadius * 2)

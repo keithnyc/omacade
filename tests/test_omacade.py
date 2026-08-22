@@ -296,6 +296,8 @@ class OmacadeTests(unittest.TestCase):
         self.assertGreaterEqual(rootbound.count("if (event.isAutoRepeat)"), 2)
         self.assertIn('["/HOME", "/VAR", "/TMP", "/ROOT"]', rootbound)
         self.assertIn('Qt.resolvedUrl("assets/rootbound-sprites.png")', rootbound)
+        self.assertIn("var playerFrame = playerHorizontal ? 1 : 0", rootbound)
+        self.assertIn("context.scale(flipX ? -1 : 1, flipY ? -1 : 1)", rootbound)
 
         sprite = (ROOT / "game" / "assets" / "rootbound-sprites.png").read_bytes()
         self.assertEqual(sprite[:8], b"\x89PNG\r\n\x1a\n")
