@@ -103,7 +103,7 @@ ShellRoot {
     if (cabinetId === "rootbound") return "PACKAGES " + Number(run.packages || 0) + "  //  DEPTH " + Math.max(1, Number(run.stage || 1))
     if (cabinetId === "packet-hop") return "PORTS " + Number(run.ports || 0) + "  //  TTL " + Math.ceil(Number(run.ttl || 0))
     if (cabinetId === "core-command") return "PERFECT WAVES " + Number(run.perfectWaves || 0) + "  //  CHAIN x" + Math.max(1, Number(run.maxChain || 1))
-    if (cabinetId === "daemon-swarm") return "KILLS " + Number(run.kills || 0) + "  //  SURVIVED " + Number(run.time || 0).toFixed(0) + "S"
+    if (cabinetId === "daemon-swarm") return "WAVE " + Math.max(1, Number(run.stage || 1)) + "  //  KILLS " + Number(run.kills || 0)
     console.warn("Omacade: runDetail() has no formatter registered for cabinet '" + cabinetId + "'")
     return "SCORE " + Number(run.score || 0)
   }

@@ -47,11 +47,14 @@ ShellRoot {
       readonly property real orbitRadius: 58
       readonly property int orbitDamage: 1 + orbitLevel
       readonly property int maxEnemies: 90
-      readonly property string alertLevel: elapsed < 60 ? "LOW" : elapsed < 150 ? "ELEVATED" : elapsed < 270 ? "SEVERE" : "CRITICAL"
+      readonly property string alertLevel: wave < 4 ? "LOW" : wave < 8 ? "ELEVATED" : wave < 14 ? "SEVERE" : "CRITICAL"
       readonly property color alertColor: alertLevel === "LOW" ? theme.green : alertLevel === "ELEVATED" ? theme.yellow : alertLevel === "SEVERE" ? theme.orange : theme.red
       readonly property int xpToNext: 6 + level * 4
+      readonly property int waveKillTarget: 8 + wave * 5
       readonly property real pickupRadius: 62 + pickupBonus * 16
       readonly property real moveSpeed: 190 * (1 + speedBonus * 0.12)
+      readonly property real enemySpeedMul: 1 + Math.min(3.2, wave * 0.07)
+      readonly property real enemyHpMul: 1 + wave * 0.1
 
       property string mode: "attract"
       property string modeBeforeScores: "attract"
@@ -66,6 +69,10 @@ ShellRoot {
       property int score: 0
       property int kills: 0
       property int elites: 0
+      property int wave: 1
+      property int waveKills: 0
+      property real waveTransitionLife: 0
+      property string waveReward: ""
       property int burstLevel: 1
       property int ringLevel: 0
       property int orbitLevel: 0
@@ -80,7 +87,7 @@ ShellRoot {
       property real chainCooldown: 0
       property real mineCooldown: 0
       property real spawnCooldown: 0.6
-      property real eliteCooldown: 150
+      property real eliteCooldown: 30
       property real eliteWarning: 0
       property var eliteWarningPos: ({ x: 0, y: 0 })
       property real animationTime: 0
@@ -194,6 +201,10 @@ ShellRoot {
         score = 0
         kills = 0
         elites = 0
+        wave = 1
+        waveKills = 0
+        waveTransitionLife = 0
+        waveReward = ""
         burstLevel = 1
         ringLevel = 0
         orbitLevel = 0
@@ -208,7 +219,7 @@ ShellRoot {
         chainCooldown = 0
         mineCooldown = 0
         spawnCooldown = 0.6
-        eliteCooldown = 150
+        eliteCooldown = 30
         eliteWarning = 0
         enemies = []
         orbs = []
@@ -244,10 +255,10 @@ ShellRoot {
 
       function pickEnemyType() {
         var roll = Math.random()
-        if (elapsed < 40) return "worm"
-        if (elapsed < 90) return roll < 0.7 ? "worm" : "fork"
-        if (elapsed < 180) return roll < 0.5 ? "worm" : roll < 0.82 ? "fork" : "trojan"
-        return roll < 0.38 ? "worm" : roll < 0.68 ? "fork" : "trojan"
+        if (wave < 3) return "worm"
+        if (wave < 6) return roll < 0.7 ? "worm" : "fork"
+        if (wave < 12) return roll < 0.5 ? "worm" : roll < 0.82 ? "fork" : "trojan"
+        return roll < 0.3 ? "worm" : roll < 0.62 ? "fork" : "trojan"
       }
 
       function edgeSpawnPoint() {
@@ -262,9 +273,10 @@ ShellRoot {
       function makeEnemy(type, pos) {
         var profile = enemyProfile(type)
         enemySerial += 1
-        var speedMul = 1 + Math.min(0.9, elapsed / 240)
-        return { id: enemySerial, type: type, x: pos.x, y: pos.y, hp: profile.hp, maxHp: profile.hp,
-                 speed: profile.speed * speedMul, radius: profile.radius, damage: profile.damage,
+        var scaledHp = Math.max(1, Math.round(profile.hp * enemyHpMul))
+        return { id: enemySerial, type: type, x: pos.x, y: pos.y, hp: scaledHp, maxHp: scaledHp,
+                 speed: profile.speed * enemySpeedMul, radius: profile.radius,
+                 damage: profile.damage + Math.floor(wave / 15),
                  xp: profile.xp, score: profile.score, colorKey: profile.color, hitFlash: 0,
                  orbitCooldown: 0 }
       }
@@ -298,7 +310,7 @@ ShellRoot {
                        damage: 1 + Math.floor((burstLevel - 1) / 2), pierce: burstLevel - 1,
                        travelled: 0, maxRange: 760, hitIds: [] })
         bolts = updated
-        burstCooldown = Math.max(0.2, 0.62 - (burstLevel - 1) * 0.08)
+        burstCooldown = Math.max(0.22, 0.9 - (burstLevel - 1) * 0.08)
       }
 
       function pulseRing() {
@@ -527,6 +539,7 @@ ShellRoot {
           if (e.hp <= 0) {
             killRewards(e)
             kills += 1
+            waveKills += 1
             if (e.type === "rootkit") elites += 1
             if (e.type === "fork") {
               spawnQueue.push({ x: e.x, y: e.y })
@@ -586,11 +599,11 @@ ShellRoot {
         if (orbitLevel === 0) pool.push({ id: "unlock-orbit", title: "PATCH ORBIT", detail: "Unlock an orbiting shard that damages on contact." })
         if (chainLevel === 0) pool.push({ id: "unlock-chain", title: "TRACEROUTE ARC", detail: "Unlock chain lightning that arcs between nearby threats." })
         if (mineLevel === 0) pool.push({ id: "unlock-mine", title: "HONEYPOT MINE", detail: "Unlock a proximity trap that detonates on contact." })
-        if (ringLevel > 0 && ringLevel < 4) pool.push({ id: "ring-up", title: "RING OVERCLOCK", detail: "Firewall Ring: +radius, +damage, faster pulse." })
-        if (orbitLevel > 0 && orbitLevel < 4) pool.push({ id: "orbit-up", title: "ORBIT EXPANSION", detail: "Patch Orbit: +1 shard." })
-        if (chainLevel > 0 && chainLevel < 4) pool.push({ id: "chain-up", title: "ARC OVERCLOCK", detail: "Traceroute Arc: +damage, +1 jump, faster pulse." })
-        if (mineLevel > 0 && mineLevel < 4) pool.push({ id: "mine-up", title: "MINE OVERCLOCK", detail: "Honeypot Mine: +blast radius, +damage, faster redeploy." })
-        if (burstLevel < 5) pool.push({ id: "burst-up", title: "PACKET OVERCLOCK", detail: "Packet Burst: faster fire, +pierce, +damage." })
+        if (ringLevel > 0) pool.push({ id: "ring-up", title: "RING OVERCLOCK", detail: "Firewall Ring: +radius, +damage, faster pulse." })
+        if (orbitLevel > 0) pool.push({ id: "orbit-up", title: "ORBIT EXPANSION", detail: "Patch Orbit: +1 shard." })
+        if (chainLevel > 0) pool.push({ id: "chain-up", title: "ARC OVERCLOCK", detail: "Traceroute Arc: +damage, +1 jump, faster pulse." })
+        if (mineLevel > 0) pool.push({ id: "mine-up", title: "MINE OVERCLOCK", detail: "Honeypot Mine: +blast radius, +damage, faster redeploy." })
+        pool.push({ id: "burst-up", title: "PACKET OVERCLOCK", detail: "Packet Burst: faster fire, +pierce, +damage." })
         pool.push({ id: "speed-up", title: "IO BOOST", detail: "+12% movement speed." })
         pool.push({ id: "hp-up", title: "INTEGRITY PATCH", detail: "+1 max integrity, heal 1." })
         pool.push({ id: "pickup-up", title: "WIDE SCAN", detail: "+ pickup radius for stray packets." })
@@ -628,11 +641,11 @@ ShellRoot {
         else if (id === "unlock-orbit") orbitLevel = 1
         else if (id === "unlock-chain") { chainLevel = 1; chainCooldown = 0.8 }
         else if (id === "unlock-mine") { mineLevel = 1; mineCooldown = 1.2 }
-        else if (id === "ring-up") ringLevel = Math.min(4, ringLevel + 1)
-        else if (id === "orbit-up") orbitLevel = Math.min(4, orbitLevel + 1)
-        else if (id === "chain-up") chainLevel = Math.min(4, chainLevel + 1)
-        else if (id === "mine-up") mineLevel = Math.min(4, mineLevel + 1)
-        else if (id === "burst-up") burstLevel = Math.min(5, burstLevel + 1)
+        else if (id === "ring-up") ringLevel += 1
+        else if (id === "orbit-up") orbitLevel += 1
+        else if (id === "chain-up") chainLevel += 1
+        else if (id === "mine-up") mineLevel += 1
+        else if (id === "burst-up") burstLevel += 1
         else if (id === "speed-up") speedBonus += 1
         else if (id === "hp-up") { maxHp += 1; hp = Math.min(maxHp, hp + 1) }
         else if (id === "pickup-up") pickupBonus += 1
@@ -642,16 +655,55 @@ ShellRoot {
         mode = "playing"
       }
 
+      function killsForWave(w) {
+        return 8 + w * 5
+      }
+
+      function rollWaveReward() {
+        var options = ["heal", "airdrop", "ammo", "shield", "score"]
+        var pick = options[Math.floor(Math.random() * options.length)]
+        if (pick === "heal") {
+          if (hp < maxHp) { hp = maxHp; waveReward = "INTEGRITY RESTORED" }
+          else { maxHp += 1; hp = maxHp; waveReward = "MAX INTEGRITY +1" }
+        } else if (pick === "airdrop") {
+          var bonus = 14 + wave * 2
+          gainXp(bonus)
+          waveReward = "PACKET AIRDROP // +" + bonus + " CACHE"
+        } else if (pick === "ammo") {
+          burstCooldown = 0; ringCooldown = 0; chainCooldown = 0; mineCooldown = 0
+          waveReward = "AMMO CACHE // WEAPONS RECHARGED"
+        } else if (pick === "shield") {
+          invulnerable = Math.max(invulnerable, 3.0)
+          waveReward = "EMERGENCY SHIELD // 3S INVULNERABLE"
+        } else {
+          var bonus2 = 100 + wave * 15
+          score += bonus2
+          waveReward = "SCORE SURGE // +" + bonus2
+        }
+      }
+
+      function completeWave() {
+        wave += 1
+        waveKills = 0
+        enemies = []
+        mode = "wavecomplete"
+        waveTransitionLife = 2.0
+        spawnBurst(playerX, playerY, "accent", 30, 200, 0.6)
+        spawnPop(playerX, playerY, "accent", 100, 0.5)
+        shell.play(levelSound)
+        rollWaveReward()
+      }
+
       function updateSpawns(dt) {
         spawnCooldown -= dt
         if (spawnCooldown <= 0 && enemies.length < maxEnemies) {
           spawnEnemyAt(pickEnemyType(), edgeSpawnPoint())
-          spawnCooldown = Math.max(0.16, 1.05 - elapsed * 0.0028) * (0.75 + Math.random() * 0.5)
+          spawnCooldown = Math.max(0.14, 1.0 - wave * 0.02) * (0.75 + Math.random() * 0.5)
         }
       }
 
       function updateElite(dt) {
-        if (elapsed < 150) return
+        if (wave < 6) return
         if (eliteWarning > 0) {
           eliteWarning -= dt
           if (eliteWarning <= 0) {
@@ -664,7 +716,7 @@ ShellRoot {
         if (eliteCooldown <= 0) {
           eliteWarningPos = edgeSpawnPoint()
           eliteWarning = 1.4
-          eliteCooldown = 42
+          eliteCooldown = Math.max(16, 42 - wave * 0.6)
           statusMessage = "ROOTKIT DETECTED // INBOUND"
         }
       }
@@ -683,8 +735,8 @@ ShellRoot {
       }
 
       function recordRun(initials) {
-        arcadeData.recordScore({ score: score, initials: initials, difficulty: "swarm", stage: level,
-                                 time: Math.round(elapsed), kills: kills, elites: elites })
+        arcadeData.recordScore({ score: score, initials: initials, difficulty: "swarm", stage: wave,
+                                 time: Math.round(elapsed), kills: kills, elites: elites, level: level })
       }
 
       function submitInitials() {
@@ -718,6 +770,7 @@ ShellRoot {
         updateMines(dt)
         updateEnemies(dt)
         if (mode !== "playing") return
+        if (waveKills >= waveKillTarget) { completeWave(); return }
         updateOrbs(dt)
         if (mode !== "playing") return
         updateSpawns(dt)
@@ -798,6 +851,10 @@ ShellRoot {
           var dt = Math.max(0.001, Math.min(0.05, (now - game.lastTickMs) / 1000))
           game.lastTickMs = now
           game.tick(dt)
+          if (game.mode === "wavecomplete") {
+            game.waveTransitionLife = Math.max(0, game.waveTransitionLife - dt)
+            if (game.waveTransitionLife <= 0) game.mode = "playing"
+          }
           worldCanvas.requestPaint()
         }
       }
@@ -823,14 +880,14 @@ ShellRoot {
               width: parent.width * 0.40
               anchors.verticalCenter: parent.verticalCenter
               Text { text: "OMACADE // " + shell.cabinet.shortTitle; color: theme.accent; font.pixelSize: 20; font.bold: true; font.letterSpacing: 1.5 }
-              Text { text: "THREAT LEVEL: " + game.alertLevel; color: game.alertColor; font.pixelSize: 11; font.family: "monospace"; font.bold: true }
+              Text { text: "THREAT LEVEL: " + game.alertLevel + "  //  KILLS " + game.waveKills + "/" + game.waveKillTarget; color: game.alertColor; font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Text { text: game.statusMessage; color: theme.muted; font.pixelSize: 9; font.family: "monospace"; font.bold: true; elide: Text.ElideRight; width: parent.width - 12 }
             }
             Repeater {
               model: [
                 { label: "SCORE", value: game.score },
+                { label: "WAVE", value: game.wave },
                 { label: "LEVEL", value: game.level },
-                { label: "TIME", value: game.formatTime(game.elapsed) },
                 { label: "INTEGRITY", value: game.hp + "/" + game.maxHp }
               ]
               delegate: Column {
@@ -1007,7 +1064,7 @@ ShellRoot {
                 var b = game.bolts[bi2]
                 var tailDX = game.playerX - b.x, tailDY = game.playerY - b.y
                 var tailDist = Math.sqrt(tailDX * tailDX + tailDY * tailDY) || 1
-                var tailLen = Math.min(tailDist, 30)
+                var tailLen = Math.min(tailDist, 16)
                 var tailX = b.x + tailDX / tailDist * tailLen, tailY = b.y + tailDY / tailDist * tailLen
                 context.globalAlpha = 0.3
                 context.strokeStyle = theme.accent
@@ -1230,7 +1287,7 @@ ShellRoot {
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "AUTO-FIRE TARGETS THE NEAREST THREAT  ·  YOU JUST NEED TO SURVIVE"; color: theme.green; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "FORKS SPLIT ON DEATH  ·  ROOTKIT ELITES BREACH AFTER T+2:30"; color: theme.orange; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "← ↑ ↓ → / WASD MOVE"; color: theme.muted; font.pixelSize: 11; font.family: "monospace" }
-              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "BEST " + arcadeData.bestScore + "   ·   HIGHEST LEVEL " + arcadeData.highestStage; color: theme.yellow; font.pixelSize: 13; font.family: "monospace"; font.bold: true }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "BEST " + arcadeData.bestScore + "   ·   FURTHEST WAVE " + arcadeData.highestStage; color: theme.yellow; font.pixelSize: 13; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "PRESS ENTER TO BOOT"; color: theme.accent; font.pixelSize: 18; font.family: "monospace"; font.bold: true
                 SequentialAnimation on opacity {
                   loops: Animation.Infinite
@@ -1255,8 +1312,26 @@ ShellRoot {
               anchors.centerIn: parent
               spacing: 11
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: game.mode === "paused" ? "DAEMON SUSPENDED" : "PROCESS TERMINATED"; color: game.mode === "gameover" ? theme.red : theme.accent; font.pixelSize: 25; font.bold: true; font.letterSpacing: 1.5 }
-              Text { anchors.horizontalCenter: parent.horizontalCenter; text: game.mode === "gameover" ? "SCORE " + game.score + " // LEVEL " + game.level + (shell.circuitMode ? "  ·  ENTER RETURN TO CIRCUIT" : "  ·  ENTER TO REBOOT") : "P TO RESUME"; color: theme.foreground; font.pixelSize: 12; font.family: "monospace"; font.bold: true }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: game.mode === "gameover" ? "SCORE " + game.score + " // WAVE " + game.wave + " // LEVEL " + game.level + (shell.circuitMode ? "  ·  ENTER RETURN TO CIRCUIT" : "  ·  ENTER TO REBOOT") : "P TO RESUME"; color: theme.foreground; font.pixelSize: 12; font.family: "monospace"; font.bold: true }
               Text { visible: game.mode === "gameover"; anchors.horizontalCenter: parent.horizontalCenter; text: "SURVIVED " + game.formatTime(game.elapsed) + " // " + game.kills + " KILLS // " + game.elites + " ELITES"; color: theme.muted; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+            }
+          }
+
+          Rectangle {
+            visible: game.mode === "wavecomplete"
+            anchors.centerIn: parent
+            width: Math.min(parent.width - 60, 560)
+            height: 170
+            radius: 10
+            color: theme.surface
+            border.color: theme.accent
+            border.width: 2
+            Column {
+              anchors.centerIn: parent
+              spacing: 11
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "WAVE " + (game.wave - 1) + " CLEARED"; color: theme.accent; font.pixelSize: 25; font.bold: true; font.letterSpacing: 1.5 }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: game.waveReward; color: theme.yellow; font.pixelSize: 13; font.family: "monospace"; font.bold: true }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "WAVE " + game.wave + " INBOUND"; color: theme.muted; font.pixelSize: 11; font.family: "monospace" }
             }
           }
 
@@ -1308,7 +1383,7 @@ ShellRoot {
               anchors.centerIn: parent
               spacing: 13
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "NEW UPTIME RECORD"; color: theme.yellow; font.pixelSize: 22; font.bold: true }
-              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "SCORE " + game.score + "  //  LEVEL " + game.level; color: theme.foreground; font.pixelSize: 13; font.family: "monospace"; font.bold: true }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "SCORE " + game.score + "  //  WAVE " + game.wave + "  //  LEVEL " + game.level; color: theme.foreground; font.pixelSize: 13; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "ENTER PILOT INITIALS"; color: theme.muted; font.pixelSize: 11; font.family: "monospace" }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: (game.initialsInput + "___").slice(0, 3); color: theme.accent; font.pixelSize: 43; font.family: "monospace"; font.bold: true; font.letterSpacing: 10 }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "TYPE 3 CHARACTERS  ·  ENTER TO SAVE"; color: theme.muted; font.pixelSize: 10; font.family: "monospace" }
@@ -1329,7 +1404,7 @@ ShellRoot {
               anchors.margins: 24
               spacing: 8
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "DAEMON SWARM // TOP TEN"; color: theme.accent; font.pixelSize: 22; font.bold: true }
-              Text { text: " #    PILOT       SCORE       LEVEL   TIME"; color: theme.muted; font.pixelSize: 12; font.family: "monospace"; font.bold: true }
+              Text { text: " #    PILOT       SCORE       WAVE    TIME"; color: theme.muted; font.pixelSize: 12; font.family: "monospace"; font.bold: true }
               Rectangle { width: parent.width; height: 1; color: theme.muted }
               Repeater {
                 model: 10
@@ -1340,9 +1415,9 @@ ShellRoot {
                     var rank = index < 9 ? " " + (index + 1) : "10"
                     var pilot = row ? (arcadeData.cleanInitials(row.initials) || "---") : "---"
                     var points = row ? ("       " + Math.round(Number(row.score || 0))).slice(-7) : "      -"
-                    var rowLevel = row ? ("  " + Math.max(1, Number(row.stage || 1))).slice(-2) : " -"
+                    var rowWave = row ? ("  " + Math.max(1, Number(row.stage || 1))).slice(-2) : " -"
                     var rowTime = row ? game.formatTime(Number(row.time || 0)) : "--:--"
-                    return rank + "    " + (pilot + "        ").slice(0, 8) + "  " + points + "       " + rowLevel + "      " + rowTime
+                    return rank + "    " + (pilot + "        ").slice(0, 8) + "  " + points + "       " + rowWave + "      " + rowTime
                   }
                   color: row && index === 0 ? theme.yellow : row ? theme.foreground : theme.muted
                   font.pixelSize: 14; font.family: "monospace"; font.bold: row && index === 0

@@ -160,7 +160,8 @@ Cabinet-specific fields are part of the progression contract:
 - Packet Hop: `ports`, `ttl`
 - Core Command: `services`, `threats`, `shots`, `accuracy`, `maxChain`,
   `perfectWaves`
-- Daemon Swarm: `time`, `kills`, `elites` (its `stage` field holds level reached)
+- Daemon Swarm: `time`, `kills`, `elites`, `level` (its `stage` field holds the
+  wave reached, matching Core Command's convention — not the character level)
 - Circuit: `continues`, `splits`
 
 `ArcadeData.recordScore()` also annotates rows with `newBest`, `newStage`, and
@@ -301,9 +302,29 @@ runs rather than raw cabinet highscores, and preserve the 3000-point cap.
   fixed-target model like Core Command's threats, which is what keeps the
   swarm logic simple.
 - A level-up pauses the sim (`mode = "levelup"`) and offers 3 upgrade choices
-  drawn from a pool that skips weapons already maxed. `tick()` re-checks
-  `mode` between each update phase so a level-up (or death) mid-tick doesn't
-  let spawning/orb-collection sneak in one extra step while paused.
+  drawn from a pool that only excludes weapons not yet unlocked. `tick()`
+  re-checks `mode` between each update phase so a level-up (or death) mid-tick
+  doesn't let spawning/orb-collection sneak in one extra step while paused.
+- Weapon/passive levels (`burstLevel`, `ringLevel`, `orbitLevel`, `chainLevel`,
+  `mineLevel`, `speedBonus`, `pickupBonus`, `xpBonus`, `shieldBonus`) are
+  **deliberately uncapped** — the power fantasy is the point. Their per-cast
+  formulas already floor cooldowns (`Math.max(...)`) and cap secondary costs
+  (e.g. chain lightning's jump count caps at 4 regardless of `chainLevel`) so
+  an absurd build stays fast to simulate even though its damage doesn't stop
+  growing. Enemy HP/speed scale with `wave` (`enemyHpMul`, `enemySpeedMul`) to
+  supply the counter-pressure instead — don't reintroduce a level cap as a
+  balance fix; scale the swarm, not the player.
+- **Waves**, not open-ended survival, drive difficulty. `waveKillTarget`
+  (`8 + wave*5`) is how many kills close the current wave; hitting it clears
+  the board, rolls one automatic reward from `rollWaveReward()` (heal/airdrop
+  XP/free reload/brief invuln/score — never player-chosen, that's what keeps
+  it distinct from a level-up), and pauses on `mode = "wavecomplete"` for a
+  timed `waveTransitionLife` banner before resuming — same
+  `waveclear`/`waveintro` timer pattern Core Command already uses, handled in
+  the Timer's `onTriggered`, not inside `tick()`, since `tick()` gates on
+  `mode === "playing"` and would never see the countdown expire otherwise.
+  Enemy type mix, spawn cadence, and elite-rootkit cadence all key off `wave`
+  now, not `elapsed` — `elapsed` is kept only for the survival-time stat.
 - `maxEnemies` (90) caps concurrent enemies, including fork-split children —
   the same "deliberate cap over screen flooding" philosophy as Core Command's
   launch limits.

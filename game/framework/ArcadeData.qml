@@ -31,7 +31,7 @@ Item {
     { id: "triple-threat", title: "TRIPLE THREAT", detail: "Record a run on the first three cabinets." },
     { id: "core-shield", title: "CORE SHIELD", detail: "Clear a wave with all six services online." },
     { id: "full-stack", title: "FULL STACK", detail: "Record a run on all four original cabinets." },
-    { id: "overclocked", title: "OVERCLOCKED", detail: "Reach Level 10 in Daemon Swarm." },
+    { id: "overclocked", title: "OVERCLOCKED", detail: "Reach Wave 10 in Daemon Swarm." },
     { id: "circuit-champion", title: "CIRCUIT CHAMPION", detail: "Complete an Omacade Circuit." }
   ]
 

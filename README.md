@@ -78,16 +78,21 @@ instead of screen flooding.
 
 ### 05 // Daemon Swarm
 
-A super-lite survivors game. One security daemon, an endless and escalating
-swarm of rogue processes, and no aiming — your loadout auto-fires at the
-nearest threat. Collect packets dropped by kills to level up and pick new
-defenses: a piercing packet burst, a pulsing firewall ring, or an orbiting
-patch shard.
+A super-lite survivors game. One security daemon, an endless run of
+escalating waves of rogue processes, and no aiming — your loadout auto-fires
+at the nearest threat. Collect packets dropped by kills to level up and pick
+new defenses — a piercing packet burst, a pulsing firewall ring, an orbiting
+patch shard, chain-lightning traceroute arcs, or proximity honeypot mines —
+with no cap on how far any of them can be stacked.
 
-Forks split into two on death, trojans hit harder and soak more damage, and
-after roughly two and a half minutes a rootkit elite periodically breaches
-with a telegraphed warning. Threat level escalates from LOW to CRITICAL the
-longer you survive; there's no win condition beyond your own uptime.
+Each wave takes more kills to clear than the last; clearing one banks a free
+wave reward (a heal, a burst of bonus packets, a full weapon recharge, brief
+invulnerability, or a score surge) before the next wave begins. Forks split
+into two on death, trojans hit harder and soak more damage, and from wave 6
+onward a rootkit elite periodically breaches with a telegraphed warning.
+Threat level escalates from LOW to CRITICAL as the waves climb, and enemy
+strength keeps pace with your build — the only way to stay overpowered for
+long is to keep clearing waves faster than they scale.
 
 **Controls:** `←` `→` `↑` `↓` or `WASD` move. Auto-fire always targets the
 nearest threat — you just need to keep moving and pick good patches.
