@@ -250,7 +250,7 @@ class OmacadeTests(unittest.TestCase):
             capture_output=True,
             text=True,
         )
-        self.assertEqual(result.stdout.strip(), "Omacade 0.1.0")
+        self.assertEqual(result.stdout.strip(), "Omacade 0.1.1")
 
     def test_graphical_framework_registers_and_launches_lander(self) -> None:
         registry = (ROOT / "game" / "framework" / "CabinetRegistry.js").read_text(encoding="utf-8")
@@ -259,6 +259,7 @@ class OmacadeTests(unittest.TestCase):
         lobby = (ROOT / "game" / "arcade.qml").read_text(encoding="utf-8")
         launcher = (ROOT / "omacade-gui").read_text(encoding="utf-8")
         desktop = (ROOT / "Omacade.desktop").read_text(encoding="utf-8")
+        panel = (ROOT / "Panel.qml").read_text(encoding="utf-8")
         lander = (ROOT / "game" / "shell.qml").read_text(encoding="utf-8")
 
         self.assertIn('id: "lander"', registry)
@@ -280,7 +281,7 @@ class OmacadeTests(unittest.TestCase):
             self.assertIn(f'id: "{achievement}"', runtime)
         self.assertIn("property color accent", theme)
         self.assertIn("CabinetRegistry.cabinets", lobby)
-        self.assertIn('title: "Omacade"', lobby)
+        self.assertIn('title: "OMACADE // LOBBY"', lobby)
         self.assertIn("id: arcadeFloor", lobby)
         self.assertIn('text: "PLAYER PROFILE // "', lobby)
         self.assertIn("arcadeData.achievementDefinitions", lobby)
@@ -301,7 +302,10 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn('rootbound) target="$root/game/rootbound.qml"', launcher)
         self.assertIn('packet-hop|packethop) target="$root/game/packet-hop.qml"', launcher)
         self.assertIn('core-command|corecommand) target="$root/game/core-command.qml"', launcher)
-        self.assertIn("Exec=omarchy-launch-or-focus Omacade omacade-gui", desktop)
+        self.assertIn('Exec=omarchy-launch-or-focus "OMACADE // LOBBY" omacade-gui', desktop)
+        self.assertIn('lobbyWindowTitle: "OMACADE // LOBBY"', panel)
+        self.assertIn("Util.shellQuote(root.lobbyWindowTitle)", panel)
+        self.assertIn("Util.shellQuote(root.guiPath)", panel)
         self.assertIn('CabinetRegistry.byId("lander")', lander)
         self.assertIn("ArcadeData { id: arcadeData", lander)
         self.assertIn('Quickshell.env("OMACADE_CIRCUIT") === "1"', lander)

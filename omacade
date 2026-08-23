@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Optional
 
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 TICK = 1.0 / 30.0
 PHYSICS_STEP = 1.0 / 120.0
 CELL_ASPECT = 2.0

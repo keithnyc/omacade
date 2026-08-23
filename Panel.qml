@@ -18,6 +18,7 @@ Panel {
   readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property string pluginDir: String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "").replace(/\/$/, "")
   readonly property string guiPath: pluginDir + "/omacade-gui"
+  readonly property string lobbyWindowTitle: "OMACADE // LOBBY"
   readonly property string configPath: Quickshell.env("HOME") + "/.local/state/omarchy/omacade.json"
   readonly property string scorePath: Quickshell.env("HOME") + "/.local/share/omacade/scores.json"
 
@@ -57,7 +58,8 @@ Panel {
     if (!root.bar) return
     root.persist()
     root.close()
-    root.bar.run("omarchy-launch-or-focus 'Omacade' '" + root.guiPath + "'")
+    root.bar.run("omarchy-launch-or-focus " + Util.shellQuote(root.lobbyWindowTitle)
+                 + " " + Util.shellQuote(root.guiPath))
   }
 
   function removeFromBar() {

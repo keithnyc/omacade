@@ -261,7 +261,7 @@ ShellRoot {
   FloatingWindow {
     id: lobby
     visible: true
-    title: "Omacade"
+    title: "OMACADE // LOBBY"
     color: theme.background
     implicitWidth: 1040
     implicitHeight: 720
