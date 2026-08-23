@@ -184,6 +184,10 @@ initials become the default for future records and Circuit runs.
 
 ## Install
 
+No dependencies beyond Omarchy's bundled Quickshell (`qs`) — every sprite,
+sound effect, and score file ships in this repository, and nothing reaches
+the network at runtime.
+
 Install and enable the bar widget directly from GitHub:
 
 ```sh
