@@ -40,11 +40,12 @@ ShellRoot {
 
       readonly property real worldWidth: 1000
       readonly property real worldHeight: 600
+      readonly property real worldAspect: worldWidth / worldHeight
       readonly property real groundY: 545
       readonly property var serviceNames: ["SHELL", "NET", "HOME", "PKG", "SYNC", "BOOT"]
       readonly property var serviceCapabilities: ["AIM+", "BUS+", "SCORE+", "RULES+", "REPAIR+", "ROLLBACK"]
       readonly property string zoneName: wave <= 2 ? "/EDGE" : wave <= 4 ? "/WAN" : wave <= 6 ? "/DMZ" : "/CORE"
-      readonly property bool tooSmall: playfield.width < 620 || playfield.height < 430
+      readonly property bool tooSmall: worldCanvas.width < 620 || worldCanvas.height < 372
 
       property string mode: "attract"
       property string modeBeforeScores: "attract"
@@ -66,6 +67,7 @@ ShellRoot {
       property real impactFlash: 0
       property real chainLife: 0
       property real launchBusCooldown: 0
+      property real lastTickMs: Date.now()
       property bool bootRecoveryAvailable: true
       property string chainText: ""
       property string statusMessage: "DEFENSE GRID READY"
@@ -331,15 +333,11 @@ ShellRoot {
       }
 
       function updateExplosions(dt) {
-        var active = []
-        for (var i = 0; i < explosions.length; i++) {
+        for (var i = explosions.length - 1; i >= 0; i--) {
           var blast = explosions[i]
-          var life = blast.life + dt
-          if (life < blast.duration) active.push({ x: blast.x, y: blast.y, life: life,
-                                                   duration: blast.duration, maxRadius: blast.maxRadius,
-                                                   kind: blast.kind, combo: blast.combo })
+          blast.life += dt
+          if (blast.life >= blast.duration) explosions.splice(i, 1)
         }
-        explosions = active
       }
 
       function updateInterceptors(dt) {
@@ -354,9 +352,9 @@ ShellRoot {
             addExplosion(shot.tx, shot.ty, 82, "quarantine", 1)
             shell.play(blastSound)
           } else {
-            active.push({ x: shot.x + dx / distance * step, y: shot.y + dy / distance * step,
-                          sx: shot.sx, sy: shot.sy, tx: shot.tx, ty: shot.ty, speed: shot.speed,
-                          batteryIndex: shot.batteryIndex })
+            shot.x += dx / distance * step
+            shot.y += dy / distance * step
+            active.push(shot)
           }
         }
         interceptors = active
@@ -410,12 +408,9 @@ ShellRoot {
             if (forkY >= 205) {
               splitFork({ x: threat.x, y: 205, speed: threat.speed }, children)
             } else {
-              active.push({ sx: threat.sx, sy: threat.sy,
-                            x: threat.x, y: forkY,
-                            tx: threat.tx, ty: threat.ty, targetKind: threat.targetKind,
-                            targetIndex: threat.targetIndex, type: threat.type,
-                            speed: threat.speed, split: threat.split, hp: threat.hp,
-                            hitCooldown: nextHitCooldown })
+              threat.y = forkY
+              threat.hitCooldown = nextHitCooldown
+              active.push(threat)
             }
             continue
           }
@@ -426,12 +421,10 @@ ShellRoot {
             destroyTarget(threat)
             continue
           }
-          active.push({ sx: threat.sx, sy: threat.sy,
-                        x: threat.x + dx / distance * step, y: threat.y + dy / distance * step,
-                        tx: threat.tx, ty: threat.ty, targetKind: threat.targetKind,
-                        targetIndex: threat.targetIndex, type: threat.type,
-                        speed: threat.speed, split: threat.split, hp: threat.hp,
-                        hitCooldown: nextHitCooldown })
+          threat.x += dx / distance * step
+          threat.y += dy / distance * step
+          threat.hitCooldown = nextHitCooldown
+          active.push(threat)
         }
         for (var c = 0; c < children.length; c++) active.push(children[c])
         threats = active
@@ -492,9 +485,8 @@ ShellRoot {
         if (chainLife <= 0) currentChain = 0
         if (mode !== "playing") return
 
-        var cooled = firewallCooldowns.slice(0)
-        for (var cooldown = 0; cooldown < cooled.length; cooldown++) cooled[cooldown] = Math.max(0, cooled[cooldown] - dt)
-        firewallCooldowns = cooled
+        for (var cooldown = 0; cooldown < firewallCooldowns.length; cooldown++)
+          firewallCooldowns[cooldown] = Math.max(0, firewallCooldowns[cooldown] - dt)
         launchBusCooldown = Math.max(0, launchBusCooldown - dt)
 
         var reticleSpeed = (serviceOnline("SHELL") ? 285 : 220) * dt
@@ -604,9 +596,12 @@ ShellRoot {
         repeat: true
         running: true
         onTriggered: {
-          game.tick(0.016)
+          var now = Date.now()
+          var dt = Math.max(0.001, Math.min(0.05, (now - game.lastTickMs) / 1000))
+          game.lastTickMs = now
+          game.tick(dt)
           if (game.mode === "waveintro" || game.mode === "waveclear") {
-            game.transitionLife = Math.max(0, game.transitionLife - 0.016)
+            game.transitionLife = Math.max(0, game.transitionLife - dt)
             if (game.transitionLife <= 0) {
               if (game.mode === "waveclear") game.advanceWave()
               else game.mode = "playing"
@@ -667,7 +662,10 @@ ShellRoot {
 
           Canvas {
             id: worldCanvas
-            anchors.fill: parent
+            anchors.centerIn: parent
+            width: Math.min(parent.width, parent.height * game.worldAspect)
+            height: width / game.worldAspect
+            renderStrategy: Canvas.Threaded
             onPaint: {
               var context = getContext("2d")
               context.reset()
@@ -695,21 +693,30 @@ ShellRoot {
               context.strokeStyle = theme.muted
               context.globalAlpha = 0.09
               context.lineWidth = 1
+              context.beginPath()
               for (var gridX = 0; gridX <= game.worldWidth; gridX += 50) {
-                context.beginPath(); context.moveTo(gridX, 35); context.lineTo(gridX, game.groundY); context.stroke()
+                context.moveTo(gridX, 35); context.lineTo(gridX, game.groundY)
               }
               for (var gridY = 45; gridY < game.groundY; gridY += 50) {
-                context.beginPath(); context.moveTo(0, gridY); context.lineTo(game.worldWidth, gridY); context.stroke()
+                context.moveTo(0, gridY); context.lineTo(game.worldWidth, gridY)
               }
+              context.stroke()
               context.globalAlpha = 1
 
               for (var t = 0; t < game.threats.length; t++) {
                 var threat = game.threats[t]
                 var threatColor = threat.type === "zeroDay" ? theme.red : threat.type === "fork" ? theme.orange : threat.type === "stealth" ? theme.accent : threat.type === "rootkit" ? theme.red : theme.yellow
                 var threatAlpha = threat.type === "stealth" ? 0.22 + 0.7 * Math.abs(Math.sin(game.animationTime * 2.6 + t)) : 0.92
-                context.globalAlpha = threatAlpha * 0.55
+                context.globalAlpha = threatAlpha * 0.14
                 context.strokeStyle = threatColor
-                context.lineWidth = threat.type === "zeroDay" ? 4 : threat.type === "rootkit" ? 3 : 2
+                context.lineWidth = threat.type === "zeroDay" ? 11 : threat.type === "rootkit" ? 9 : 7
+                context.beginPath(); context.moveTo(threat.sx, threat.sy); context.lineTo(threat.x, threat.y); context.stroke()
+                context.globalAlpha = threatAlpha * 0.72
+                context.lineWidth = threat.type === "zeroDay" ? 4 : threat.type === "rootkit" ? 3 : 2.5
+                context.beginPath(); context.moveTo(threat.sx, threat.sy); context.lineTo(threat.x, threat.y); context.stroke()
+                context.globalAlpha = threatAlpha * 0.9
+                context.strokeStyle = theme.foreground
+                context.lineWidth = 0.8
                 context.beginPath(); context.moveTo(threat.sx, threat.sy); context.lineTo(threat.x, threat.y); context.stroke()
                 context.globalAlpha = threatAlpha
                 if (threat.type === "zeroDay") {
@@ -771,13 +778,22 @@ ShellRoot {
 
               for (var shot = 0; shot < game.interceptors.length; shot++) {
                 var interceptor = game.interceptors[shot]
-                context.globalAlpha = 0.48
+                context.globalAlpha = 0.16
                 context.strokeStyle = theme.accent
-                context.lineWidth = 2
+                context.lineWidth = 9
                 context.beginPath(); context.moveTo(interceptor.sx, interceptor.sy); context.lineTo(interceptor.x, interceptor.y); context.stroke()
+                context.globalAlpha = 0.95
+                context.lineWidth = 3
+                context.beginPath(); context.moveTo(interceptor.sx, interceptor.sy); context.lineTo(interceptor.x, interceptor.y); context.stroke()
+                context.strokeStyle = theme.foreground
+                context.lineWidth = 1
+                context.beginPath(); context.moveTo(interceptor.sx, interceptor.sy); context.lineTo(interceptor.x, interceptor.y); context.stroke()
+                context.globalAlpha = 0.28
+                context.fillStyle = theme.accent
+                context.beginPath(); context.arc(interceptor.x, interceptor.y, 7, 0, Math.PI * 2); context.fill()
                 context.globalAlpha = 1
                 context.fillStyle = theme.foreground
-                context.beginPath(); context.arc(interceptor.x, interceptor.y, 3.5, 0, Math.PI * 2); context.fill()
+                context.beginPath(); context.arc(interceptor.x, interceptor.y, 2.8, 0, Math.PI * 2); context.fill()
               }
 
               for (var e = 0; e < game.explosions.length; e++) {
@@ -886,7 +902,7 @@ ShellRoot {
           }
 
           MouseArea {
-            anchors.fill: parent
+            anchors.fill: worldCanvas
             hoverEnabled: true
             enabled: game.mode === "playing"
             cursorShape: enabled ? Qt.BlankCursor : Qt.ArrowCursor
@@ -1036,7 +1052,7 @@ ShellRoot {
               anchors.centerIn: parent
               spacing: 12
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "DEFENSE DISPLAY TOO SMALL"; color: theme.red; font.pixelSize: 22; font.bold: true }
-              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Enlarge the cabinet for a 620 × 430 playfield."; color: theme.foreground; font.pixelSize: 12; font.family: "monospace" }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Enlarge the cabinet for a 620 × 372 defense grid."; color: theme.foreground; font.pixelSize: 12; font.family: "monospace" }
             }
           }
         }

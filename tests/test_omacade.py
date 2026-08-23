@@ -440,6 +440,12 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("maxChain: maxChain, perfectWaves: perfectWaves", core_command)
         self.assertIn('text: "CORE//COMMAND // TOP TEN"', core_command)
         self.assertIn('statusMessage = "THREAT SALVO // CHAIN WINDOW OPEN"', core_command)
+        self.assertIn("readonly property real worldAspect: worldWidth / worldHeight", core_command)
+        self.assertIn("width: Math.min(parent.width, parent.height * game.worldAspect)", core_command)
+        self.assertIn("height: width / game.worldAspect", core_command)
+        self.assertIn("renderStrategy: Canvas.Threaded", core_command)
+        self.assertIn("var dt = Math.max(0.001, Math.min(0.05", core_command)
+        self.assertIn("context.lineWidth = 9", core_command)
         for effect in ("launch", "blast", "impact", "wave"):
             wav = (ROOT / "game" / "assets" / "sfx" / f"core-{effect}.wav").read_bytes()
             self.assertEqual(wav[:4], b"RIFF")
