@@ -233,6 +233,7 @@ ShellRoot {
 
       function chooseDifficulty(next) {
         if (["cadet", "pilot", "ace"].indexOf(next) < 0) return
+        if (flightState === "flying") return
         arcadeData.patchConfig({ difficulty: next })
         stage = 1
         shell.playEffect(rotateSound)
@@ -462,6 +463,7 @@ ShellRoot {
 
       function startFlight() {
         if (viewportTooSmall) return
+        if (shell.circuitMode && circuitRunRecorded) return
         stageClearDelay.stop()
         attractMode = false
         makeTerrain()

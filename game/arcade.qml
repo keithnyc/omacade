@@ -29,6 +29,7 @@ ShellRoot {
   property var circuitFinalRun: ({})
   property var stars: []
   property real starTime: 0
+  property int recapAttempts: 0
 
   ArcadeTheme { id: theme }
   ArcadeData { id: arcadeData; cabinetId: arcade.cabinets.length ? arcade.cabinets[arcade.selectedIndex].scoreKey : "" }
@@ -100,8 +101,11 @@ ShellRoot {
     if (!run || run.score === undefined) return "NO SESSION DATA"
     if (cabinetId === "lander") return "FUEL " + Number(run.fuel || 0).toFixed(1) + "  //  FLIGHT " + Number(run.time || 0).toFixed(1) + "S"
     if (cabinetId === "rootbound") return "PACKAGES " + Number(run.packages || 0) + "  //  DEPTH " + Math.max(1, Number(run.stage || 1))
+    if (cabinetId === "packet-hop") return "PORTS " + Number(run.ports || 0) + "  //  TTL " + Math.ceil(Number(run.ttl || 0))
     if (cabinetId === "core-command") return "PERFECT WAVES " + Number(run.perfectWaves || 0) + "  //  CHAIN x" + Math.max(1, Number(run.maxChain || 1))
-    return "PORTS " + Number(run.ports || 0) + "  //  TTL " + Math.ceil(Number(run.ttl || 0))
+    if (cabinetId === "daemon-swarm") return "KILLS " + Number(run.kills || 0) + "  //  SURVIVED " + Number(run.time || 0).toFixed(0) + "S"
+    console.warn("Omacade: runDetail() has no formatter registered for cabinet '" + cabinetId + "'")
+    return "SCORE " + Number(run.score || 0)
   }
 
   function circuitPoints(run, cabinetId) {
@@ -115,9 +119,16 @@ ShellRoot {
       points = raw * 0.10 + Math.max(1, Number(run.stage || 1)) * 420 + Number(run.packages || 0) * 80
     else if (cabinetId === "packet-hop")
       points = raw * 0.10 + Math.max(1, Number(run.stage || 1)) * 220 + Number(run.ports || 0) * 330 + Number(run.ttl || 0) * 6
-    else
+    else if (cabinetId === "core-command")
       points = raw * 0.055 + Math.max(1, Number(run.stage || 1)) * 250 + Number(run.services || 0) * 170
              + Number(run.perfectWaves || 0) * 260 + Number(run.maxChain || 0) * 55
+    else if (cabinetId === "daemon-swarm")
+      points = raw * 0.05 + Math.max(1, Number(run.stage || 1)) * 180 + Number(run.time || 0) * 3.6
+             + Number(run.kills || 0) * 4 + Number(run.elites || 0) * 140
+    else {
+      console.warn("Omacade: circuitPoints() has no formula registered for cabinet '" + cabinetId + "'")
+      return 0
+    }
     return Math.max(0, Math.min(3000, Math.round(points)))
   }
 
@@ -220,6 +231,7 @@ ShellRoot {
     onExited: {
       lobby.visible = true
       lobbyContent.forceActiveFocus()
+      arcade.recapAttempts = 0
       arcadeData.reloadScores()
       recapTimer.restart()
     }
@@ -227,12 +239,18 @@ ShellRoot {
 
   Timer {
     id: recapTimer
-    interval: 240
-    repeat: false
+    interval: 120
+    repeat: true
     onTriggered: {
+      arcade.recapAttempts += 1
       arcadeData.applyScores(JSON.stringify(arcadeData.scoreData || {}))
       var hasNewRun = arcadeData.lastRun && arcadeData.lastRun.score !== undefined
                       && String(arcadeData.lastRun.at || "") !== arcade.launchRunAt
+      // Reloading the score file is async (FileView watch/reload), so a slow
+      // disk can still be mid-reload the first time we check. Poll briefly
+      // before concluding the cabinet's result was actually lost.
+      if (!hasNewRun && arcade.recapAttempts < 8) return
+      recapTimer.stop()
       if (arcade.circuitActive) {
         arcade.circuitBriefing = true
         if (hasNewRun) {
@@ -608,7 +626,7 @@ ShellRoot {
             Rectangle { width: parent.width; height: 1; color: theme.muted; opacity: 0.7 }
             Text {
               anchors.horizontalCenter: parent.horizontalCenter
-              text: arcade.circuitPhase === "intro" ? "FOUR CABINETS. ONE PILOT. ONE FULL-STACK SCORE."
+              text: arcade.circuitPhase === "intro" ? "FIVE CABINETS. ONE PILOT. ONE FULL-STACK SCORE."
                     : arcade.circuitPhase === "complete" ? "CIRCUIT SCORE  " + arcade.circuitScore
                     : arcade.circuitPhase === "aborted" ? "NO RUN RECORD RECEIVED FROM " + parent.parent.circuitCabinet.shortTitle
                     : arcade.circuitPhase === "result" ? parent.parent.circuitCabinet.shortTitle + " // CONTRACT COMPLETE"

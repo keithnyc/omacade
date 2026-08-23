@@ -54,6 +54,7 @@ ShellRoot {
       property int spawnedThreats: 0
       property int waveThreats: 9
       property int threatsDestroyed: 0
+      property int hitsLanded: 0
       property int shotsFired: 0
       property int maxChain: 0
       property int currentChain: 0
@@ -129,6 +130,7 @@ ShellRoot {
         wave = 1
         score = 0
         threatsDestroyed = 0
+        hitsLanded = 0
         shotsFired = 0
         maxChain = 0
         currentChain = 0
@@ -292,6 +294,7 @@ ShellRoot {
       }
 
       function destroyTarget(threat) {
+        var wasAlive = false
         if (threat.targetKind === "service") {
           var updatedServices = services.slice(0)
           var service = updatedServices[threat.targetIndex]
@@ -303,14 +306,18 @@ ShellRoot {
             shell.play(waveSound)
             return
           }
-          if (service && service.alive) updatedServices[threat.targetIndex] = { x: service.x, alive: false, name: service.name }
+          wasAlive = !!(service && service.alive)
+          if (wasAlive) updatedServices[threat.targetIndex] = { x: service.x, alive: false, name: service.name }
           services = updatedServices
-          statusMessage = service ? service.name + " OFFLINE // PAYLOAD IMPACT" : "SERVICE OFFLINE"
+          if (!wasAlive) return
+          statusMessage = service.name + " OFFLINE // PAYLOAD IMPACT"
         } else {
           var updatedBatteries = batteries.slice(0)
           var battery = updatedBatteries[threat.targetIndex]
-          if (battery && battery.alive) updatedBatteries[threat.targetIndex] = { x: battery.x, alive: false, ammo: 0 }
+          wasAlive = !!(battery && battery.alive)
+          if (wasAlive) updatedBatteries[threat.targetIndex] = { x: battery.x, alive: false, ammo: 0 }
           batteries = updatedBatteries
+          if (!wasAlive) return
           statusMessage = "FIREWALL " + (threat.targetIndex + 1) + " OFFLINE"
         }
         impactFlash = 0.45
@@ -381,6 +388,7 @@ ShellRoot {
             var chain = Math.max(game.chainLife > 0 ? game.currentChain + 1 : 1,
                                  Math.max(1, interceptedBy.combo))
             currentChain = chain
+            hitsLanded += 1
             var base = threat.type === "zeroDay" ? 420 : threat.type === "rootkit" ? 260 : threat.type === "fork" ? 180 : threat.type === "stealth" ? 210 : 120
             score += base * chain
             maxChain = Math.max(maxChain, chain)
@@ -460,7 +468,7 @@ ShellRoot {
       function recordRun(initials) {
         arcadeData.recordScore({ score: score, initials: initials, difficulty: "core", stage: wave,
                                  services: onlineServices, threats: threatsDestroyed,
-                                 shots: shotsFired, accuracy: shotsFired > 0 ? Math.round(threatsDestroyed * 100 / shotsFired) : 0,
+                                 shots: shotsFired, accuracy: shotsFired > 0 ? Math.round(hitsLanded * 100 / shotsFired) : 0,
                                  maxChain: maxChain, perfectWaves: perfectWaves })
       }
 

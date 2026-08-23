@@ -525,6 +525,10 @@ ShellRoot {
           if (eligible)
             candidates.push(source)
         }
+        if (!candidates.length) {
+          networkEvent = ""
+          return
+        }
         var target = candidates[(selection + stage) % candidates.length]
         eventLaneRow = target.row
         eventPhase = "warning"
@@ -600,7 +604,7 @@ ShellRoot {
           event.accepted = true
           return
         }
-        if (mode !== "playing") { event.accepted = true; return }
+        if (mode !== "playing" || game.tooSmall) { event.accepted = true; return }
         if (event.key === Qt.Key_Left || event.key === Qt.Key_A) { leftHeld = true; setIntent(-1, 0) }
         else if (event.key === Qt.Key_Right || event.key === Qt.Key_D) { rightHeld = true; setIntent(1, 0) }
         else if (event.key === Qt.Key_Up || event.key === Qt.Key_W) { upHeld = true; setIntent(0, -1) }
@@ -624,21 +628,21 @@ ShellRoot {
       Timer {
         interval: 165
         repeat: true
-        running: game.mode === "playing" && (game.leftHeld || game.rightHeld || game.upHeld || game.downHeld)
+        running: game.mode === "playing" && !game.tooSmall && (game.leftHeld || game.rightHeld || game.upHeld || game.downHeld)
         onTriggered: if (game.intentX !== 0 || game.intentY !== 0) game.requestHop(game.intentX, game.intentY)
       }
 
       Timer {
         interval: game.stage === 1 ? 9000 : game.stage === 2 ? 7500 : 6200
         repeat: true
-        running: game.mode === "playing"
+        running: game.mode === "playing" && !game.tooSmall
         onTriggered: game.queueNetworkEvent()
       }
 
       Timer {
         interval: 16
         repeat: true
-        running: true
+        running: !game.tooSmall
         onTriggered: {
           game.animationTime += 0.016
           if (game.mode === "playing") game.stageTime += 0.016
@@ -978,6 +982,15 @@ ShellRoot {
                 game.drawSprite(context, socket.bound ? 1 : 0, 3,
                                 (socket.x + 0.5) * game.cellWidth, game.cellHeight * 0.5,
                                 game.cellWidth * 1.55, game.cellHeight * 1.38, 1, false)
+                if (socket.bound) {
+                  context.globalAlpha = 0.32 + 0.15 * Math.sin(game.animationTime * 4 + socket.x)
+                  context.strokeStyle = theme.green
+                  context.lineWidth = 2
+                  context.beginPath()
+                  context.arc((socket.x + 0.5) * game.cellWidth, game.cellHeight * 0.5, game.cellHeight * 0.58, 0, Math.PI * 2)
+                  context.stroke()
+                  context.globalAlpha = 1
+                }
               }
 
               for (var l = 0; l < game.lanes.length; l++) {
@@ -1005,6 +1018,17 @@ ShellRoot {
                   context.strokeStyle = game.eventColor
                   context.lineWidth = 2
                   context.strokeRect(1, laneTop + 1, width - 2, game.cellHeight - 2)
+                  if (game.eventPhase === "warning") {
+                    var sweepX = ((game.animationTime * 1.6) % 1) * width
+                    context.globalAlpha = 0.22
+                    context.strokeStyle = game.eventColor
+                    context.lineWidth = 14
+                    context.beginPath(); context.moveTo(sweepX, laneTop); context.lineTo(sweepX, laneTop + game.cellHeight); context.stroke()
+                    context.globalAlpha = 0.85
+                    context.lineWidth = 2.5
+                    context.beginPath(); context.moveTo(sweepX, laneTop); context.lineTo(sweepX, laneTop + game.cellHeight); context.stroke()
+                    context.globalAlpha = 1
+                  }
                   if (game.networkEvent === "packetloss" && game.eventPhase === "active") {
                     context.globalAlpha = 0.32
                     context.lineWidth = 3
@@ -1034,6 +1058,19 @@ ShellRoot {
                 for (var item = 0; item < traffic.items.length; item++) {
                   var vehicle = traffic.items[item]
                   var spriteOpacity = trafficActive ? (trafficWarning ? 0.62 + 0.28 * Math.sin(game.animationTime * 14) : 1) : 0.2
+                  if (traffic.type === "network") {
+                    var streakVX = (vehicle.x + 0.5) * game.cellWidth
+                    var streakVY = (traffic.row + 0.5) * game.cellHeight
+                    var streakTailX = streakVX - traffic.direction * game.cellWidth * vehicle.width * 0.9
+                    context.globalAlpha = 0.14 * spriteOpacity
+                    context.strokeStyle = theme.accent
+                    context.lineWidth = game.cellHeight * 0.5
+                    context.beginPath(); context.moveTo(streakTailX, streakVY); context.lineTo(streakVX, streakVY); context.stroke()
+                    context.globalAlpha = 0.5 * spriteOpacity
+                    context.lineWidth = 2.5
+                    context.beginPath(); context.moveTo(streakTailX, streakVY); context.lineTo(streakVX, streakVY); context.stroke()
+                    context.globalAlpha = 1
+                  }
                   game.drawSprite(context, spriteColumn, spriteRow,
                                   (vehicle.x + 0.5) * game.cellWidth, (traffic.row + 0.5) * game.cellHeight,
                                   game.cellWidth * vehicle.width, game.cellHeight * 1.18,
@@ -1059,10 +1096,18 @@ ShellRoot {
                 }
               }
 
-              if (game.ttlPickup.active)
-                game.drawSprite(context, 2, 3,
-                                (game.ttlPickup.x + 0.5) * game.cellWidth, (game.ttlPickup.y + 0.5) * game.cellHeight,
-                                game.cellWidth * 1.15, game.cellHeight * 1.15, 1, false)
+              if (game.ttlPickup.active) {
+                var ttlX = (game.ttlPickup.x + 0.5) * game.cellWidth
+                var ttlY = (game.ttlPickup.y + 0.5) * game.cellHeight
+                context.globalAlpha = 0.6 + 0.28 * Math.sin(game.animationTime * 9)
+                context.strokeStyle = theme.accent
+                context.lineWidth = 2.4
+                context.beginPath()
+                context.arc(ttlX, ttlY, game.cellHeight * 0.4, 0, Math.PI * 2)
+                context.stroke()
+                context.globalAlpha = 1
+                game.drawSprite(context, 2, 3, ttlX, ttlY, game.cellWidth * 1.15, game.cellHeight * 1.15, 1, false)
+              }
 
               if (game.cachePickup.active) {
                 var cacheX = (game.cachePickup.x + 0.5) * game.cellWidth
@@ -1090,6 +1135,21 @@ ShellRoot {
               var py = (game.playerVisualY + 0.5) * game.cellHeight
               var courierFrame = game.mode === "binding" ? 2 : game.mode === "dropping" ? 3 : Math.floor(game.animationTime * 5) % 2
               var courierScale = game.mode === "dropping" ? 1.9 : 1.38
+              if (game.mode === "playing" || game.mode === "binding") {
+                var courierPulse = 3 * Math.sin(game.animationTime * 5)
+                context.globalAlpha = 0.16
+                context.strokeStyle = theme.accent
+                context.lineWidth = 8
+                context.beginPath()
+                context.arc(px, py, game.cellHeight * 0.62 + courierPulse, 0, Math.PI * 2)
+                context.stroke()
+                context.globalAlpha = 0.5
+                context.lineWidth = 2
+                context.beginPath()
+                context.arc(px, py, game.cellHeight * 0.5 + courierPulse, 0, Math.PI * 2)
+                context.stroke()
+                context.globalAlpha = 1
+              }
               var trailDX = game.playerVisualX - game.playerX
               var trailDY = game.playerVisualY - game.playerY
               if (game.mode === "playing" && Math.abs(trailDX) + Math.abs(trailDY) > 0.04) {

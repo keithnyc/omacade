@@ -60,6 +60,21 @@ var cabinets = [
     accent: "red",
     status: "ready",
     controls: "MOUSE / ARROWS AIM   ·   CLICK / SPACE FIRE"
+  },
+  {
+    id: "daemon-swarm",
+    number: "05",
+    title: "Daemon Swarm",
+    displayTitle: "D A E M O N  S W A R M",
+    shortTitle: "DAEMON SWARM",
+    windowTitle: "Omacade Daemon Swarm",
+    tagline: "One daemon. An endless swarm. Hold the line.",
+    description: "Auto-fire against a growing swarm of rogue processes, level up, and survive as long as you can.",
+    entry: "daemon-swarm.qml",
+    scoreKey: "daemon-swarm",
+    accent: "orange",
+    status: "ready",
+    controls: "← ↑ ↓ → / WASD MOVE   ·   AUTO-FIRE"
   }
 ]
 

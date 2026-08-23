@@ -22,6 +22,7 @@ Item {
   property int totalRuns: 0
   property var lastRun: ({})
   property var achievements: ({})
+  property bool scoresCorrupted: false
   readonly property var achievementDefinitions: [
     { id: "first-boot", title: "FIRST BOOT", detail: "Complete any cabinet run." },
     { id: "soft-landing", title: "SOFT LANDING", detail: "Land with at least 20 fuel remaining." },
@@ -29,7 +30,8 @@ Item {
     { id: "route-locked", title: "ROUTE LOCKED", detail: "Bind five ports in one Packet Hop run." },
     { id: "triple-threat", title: "TRIPLE THREAT", detail: "Record a run on the first three cabinets." },
     { id: "core-shield", title: "CORE SHIELD", detail: "Clear a wave with all six services online." },
-    { id: "full-stack", title: "FULL STACK", detail: "Record a run on all four cabinets." },
+    { id: "full-stack", title: "FULL STACK", detail: "Record a run on all four original cabinets." },
+    { id: "overclocked", title: "OVERCLOCKED", detail: "Reach Level 10 in Daemon Swarm." },
     { id: "circuit-champion", title: "CIRCUIT CHAMPION", detail: "Complete an Omacade Circuit." }
   ]
 
@@ -51,8 +53,16 @@ Item {
   }
 
   function applyScores(raw) {
-    var data = {}
-    try { data = JSON.parse(String(raw || "{}")) } catch (error) { data = {} }
+    var data
+    try {
+      data = JSON.parse(String(raw || "{}"))
+    } catch (error) {
+      console.warn("Omacade: scores.json is corrupt; leaving existing data untouched and refusing to write.")
+      scoresCorrupted = true
+      backupCorruptScores()
+      return
+    }
+    scoresCorrupted = false
     scoreData = data
     var rows = cabinetId && Array.isArray(data[cabinetId]) ? data[cabinetId] : []
     scoreRows = rows.slice(0, 10)
@@ -141,6 +151,8 @@ Item {
       earned["triple-threat"] = historical
     if (anyRowMatches(data, "core-command", function(row) { return Number(row.perfectWaves || 0) > 0 }) && !earned["core-shield"])
       earned["core-shield"] = historical
+    if (anyRowMatches(data, "daemon-swarm", function(row) { return Number(row.stage || 1) >= 10 }) && !earned["overclocked"])
+      earned["overclocked"] = historical
     if (completedCount(data, "lander") > 0 && completedCount(data, "rootbound") > 0
         && completedCount(data, "packet-hop") > 0 && completedCount(data, "core-command") > 0
         && !earned["full-stack"])
@@ -169,6 +181,7 @@ Item {
                              && completedCount(data, "rootbound") > 0
                              && completedCount(data, "packet-hop") > 0)
     unlock("core-shield", cabinetId === "core-command" && Number(row.perfectWaves || 0) > 0)
+    unlock("overclocked", cabinetId === "daemon-swarm" && Number(row.stage || 1) >= 10)
     unlock("full-stack", completedCount(data, "lander") > 0
                           && completedCount(data, "rootbound") > 0
                           && completedCount(data, "packet-hop") > 0
@@ -199,8 +212,14 @@ Item {
     return scoreRows.length < 10 || Number(score) > Number(scoreRows[9].score || 0)
   }
 
+  function backupCorruptScores() {
+    if (corruptBackupProcess.running) return
+    corruptBackupProcess.command = ["cp", root.scorePath, root.scorePath + ".corrupt-" + Date.now()]
+    corruptBackupProcess.running = true
+  }
+
   function recordScore(entry) {
-    if (!cabinetId) return
+    if (!cabinetId || scoresCorrupted) return
     var data = {}
     var source = scoreData || {}
     for (var key in source) data[key] = source[key]
@@ -232,6 +251,10 @@ Item {
 
   function reloadScores() {
     scoreFile.reload()
+  }
+
+  Process {
+    id: corruptBackupProcess
   }
 
   FileView {

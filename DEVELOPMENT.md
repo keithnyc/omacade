@@ -4,13 +4,16 @@ This document captures the architecture, gameplay contracts, important code
 paths, and practical lessons behind the Omacade v1 build. It is intended to be
 the first stop for future development sessions.
 
-Current checkpoint: **2026-08-22**, after commit `72d508e` (`Polish Core
-Command rendering and frame pacing`). The repository contains four playable
-graphical cabinets and a complete four-game Circuit mode.
+Last committed checkpoint: **2026-08-22**, commit `72d508e` (`Polish Core
+Command rendering and frame pacing`). Since then, a fifth cabinet — **Daemon
+Swarm** — was added on top of that checkpoint (not yet committed as of this
+writing; check `git log`/`git status` for the current state). The repository
+now contains five playable graphical cabinets and a complete five-game Circuit
+mode.
 
 ## Product state
 
-The v1 arcade floor is:
+The arcade floor is:
 
 1. **Lander** — precision lunar flight, staged terrain, difficulty selection,
    landing pads, highscores, and a terminal fallback.
@@ -22,11 +25,16 @@ The v1 arcade floor is:
 4. **Core Command** — Missile Command-inspired stack defense using limited
    firewall batteries, expanding quarantine fields, chain reactions, service
    abilities, fork bombs, stealth payloads, rootkits, and zero-day sieges.
+5. **Daemon Swarm** — a super-lite survivors game. Auto-fire at the nearest
+   rogue process, collect packets to level up, and pick from a small upgrade
+   pool (packet burst, firewall ring, patch orbit) as an escalating swarm —
+   including splitting forks and periodic telegraphed rootkit elites — closes
+   in. No aiming; the whole loop is movement and build choices.
 
 The lobby adds a shared pilot profile, top scores, last-run recaps,
-achievements, and **Omacade Circuit**. Circuit runs all four cabinets in order,
-normalizes each result to at most 3000 points, and gives the player two
-continues.
+achievements, and **Omacade Circuit**. Circuit runs all five cabinets in
+order, normalizes each result to at most 3000 points, and gives the player
+two continues.
 
 The guiding design is an original Omarchy-themed arcade, not a pixel-perfect
 clone collection. Familiar genre rules make each game immediately readable;
@@ -47,11 +55,11 @@ Omarchy bar
                lobby/orchestrator
                      |
           Quickshell Process, one at a time
-            +--------+---------+----------+-------------+
-            |                  |          |             |
-        shell.qml       rootbound.qml  packet-hop.qml  core-command.qml
+            +--------+---------+----------+-------------+-------------+
+            |                  |          |             |             |
+        shell.qml       rootbound.qml  packet-hop.qml  core-command.qml  daemon-swarm.qml
          Lander
-            +------------------+----------+-------------+
+            +------------------+----------+-------------+-------------+
                                |
                    ArcadeData.qml + ArcadeTheme.qml
                                |
@@ -81,6 +89,7 @@ Omarchy's long-running shell.
 | `game/rootbound.qml` | Rootbound simulation, input pacing, combat, stage generation, sprites, HUD, and scoring. |
 | `game/packet-hop.qml` | Packet Hop grid simulation, lane/carrier rules, network events, responsive rails, sprites, and scoring. |
 | `game/core-command.qml` | Core Command world simulation, fixed-aspect renderer, threat/interceptor logic, service abilities, and scoring. |
+| `game/daemon-swarm.qml` | Daemon Swarm world simulation, auto-fire/leveling/upgrade-pool logic, swarm AI, and scoring. |
 | `game/assets/` | Raster sprite sheets, standalone sprites, and synthesized WAV effects. |
 | `tests/test_omacade.py` | Terminal physics tests plus graphical architecture/assets/contract regression checks. |
 | `scripts/setup-user-entry` | Optional CLI, desktop entry, and theme-hook integration. Never run automatically during plugin installation. |
@@ -151,6 +160,7 @@ Cabinet-specific fields are part of the progression contract:
 - Packet Hop: `ports`, `ttl`
 - Core Command: `services`, `threats`, `shots`, `accuracy`, `maxChain`,
   `perfectWaves`
+- Daemon Swarm: `time`, `kills`, `elites` (its `stage` field holds level reached)
 - Circuit: `continues`, `splits`
 
 `ArcadeData.recordScore()` also annotates rows with `newBest`, `newStage`, and
@@ -242,6 +252,15 @@ runs rather than raw cabinet highscores, and preserve the 3000-point cap.
   hazards should read as network objects. Atlas source rectangles must be
   checked carefully; one red hazard previously rendered a duplicated half
   sprite because its crop crossed the wrong cell.
+- Neon accents (carrier motion streaks, a pulsing halo behind the player
+  courier, glow rings on pickups and bound ports, a warning-phase radar
+  sweep on the affected lane) are layered *underneath/around* the existing
+  sprites using Core Command's layered-stroke technique, not a replacement
+  for them. This was a deliberate choice over redoing the cabinet in pure
+  Geometry-Wars primitives: the sprite-based readability above took real
+  tuning to get right, and a full rewrite would have re-risked all of it.
+  Keep any new accent low-alpha and within roughly the sprite's own
+  footprint so it doesn't visually shrink the gaps between vehicles.
 
 ### Core Command
 
@@ -266,6 +285,41 @@ runs rather than raw cabinet highscores, and preserve the 3000-point cap.
 - Each surviving service provides a named ability. Every fifth wave introduces
   a three-layer zero-day siege. These mechanics are explained in HUD/briefing
   language, not left as invisible modifiers.
+
+### Daemon Swarm
+
+- The world is a fixed 900×900 square, letterboxed the same way as Core
+  Command's `worldCanvas` (never independent X/Y stretch).
+- There is no manual aim. All combat resolution (bolts, the firewall ring,
+  and orbit shards) happens inside one function, `updateEnemies(dt)`, in a
+  single sweep per tick — it checks weapon collisions against the current
+  `enemies` array, handles death/rewards/fork-splitting, then moves
+  survivors and applies contact damage, before reassigning `enemies` once.
+  Splitting this across several functions each doing their own
+  slice/reassign of `enemies` invites ordering bugs; keep it unified.
+- Enemies always chase the player's live position every frame — there is no
+  fixed-target model like Core Command's threats, which is what keeps the
+  swarm logic simple.
+- A level-up pauses the sim (`mode = "levelup"`) and offers 3 upgrade choices
+  drawn from a pool that skips weapons already maxed. `tick()` re-checks
+  `mode` between each update phase so a level-up (or death) mid-tick doesn't
+  let spawning/orb-collection sneak in one extra step while paused.
+- `maxEnemies` (90) caps concurrent enemies, including fork-split children —
+  the same "deliberate cap over screen flooding" philosophy as Core Command's
+  launch limits.
+- The 16ms Timer is gated on `!game.tooSmall`, matching the fix applied to
+  Lander/Packet Hop: never let the sim keep running (and the player keep
+  taking damage) behind a "too small" overlay the player can't see through.
+- The world Canvas is split into `bgCanvas` (background wash, stars, grid,
+  arena border — repainted on a slow 120ms Timer, not every tick) and
+  `worldCanvas` (everything that actually moves — repainted every 16ms). This
+  is the same lesson as Rootbound's `soilCanvas` split, applied for the same
+  reason: measured CPU dropped from ~117% of a core to ~44% with this change
+  plus a lower `maxParticles` cap (320→200). If adding more per-frame juice,
+  measure with `ps -o pcpu=` before assuming it's free — Canvas drawing here
+  is CPU-side QPainter work, not GPU shaders (Quickshell's regular QML items
+  *are* GPU-composited via the scene graph; `Canvas` is not, `Canvas.Threaded`
+  only moves the work off the main thread, it doesn't move it onto the GPU).
 
 ## Input, rendering, and sound conventions
 
@@ -339,7 +393,7 @@ Check collision readability, sprite aspect, HUD collisions, footer clipping,
 mouse mapping, keyboard focus, and whether animation load changes noticeably
 as the window grows.
 
-## Adding a fifth cabinet
+## Adding another cabinet
 
 1. Add `game/<id>.qml` and its assets/sounds.
 2. Register it in `CabinetRegistry.js`. Registry order currently also defines
@@ -348,10 +402,20 @@ as the window grows.
 4. Define a stable score row with enough objective fields for recaps,
    achievements, and future normalization.
 5. Implement standalone and `OMACADE_CIRCUIT=1` post-run behavior.
-6. Add `runDetail()` and `circuitPoints()` handling in `arcade.qml`.
-7. Decide whether Circuit should remain four contracts or intentionally expand;
-   do not change the v1 Circuit length accidentally by appending to the registry.
-8. Extend achievements only through backward-compatible derivation.
+6. Add `runDetail()` and `circuitPoints()` handling in `arcade.qml`. Both
+   functions already fail loudly (`console.warn` + a safe zero/fallback
+   value) for a cabinet ID they don't recognize, rather than silently
+   misattributing it to whichever branch happens to be last — keep that
+   invariant if you restructure either function.
+7. Decide deliberately whether Circuit should include the new cabinet or stay
+   at its current length; don't change Circuit length as an accidental side
+   effect of a registry append. (Daemon Swarm, cabinet 05, was added directly
+   into Circuit rather than staged as a standalone bonus cabinet — see
+   `circuitPoints()`'s `daemon-swarm` branch for its normalization formula,
+   still hand-tuned and unplaytested against the original four's balance.)
+8. Extend achievements only through backward-compatible derivation — add new
+   entries, never redefine what an existing achievement (e.g. "Full Stack")
+   means for players who already earned it.
 9. Add launcher aliases, README controls, tests, and responsive live QA.
 
 As the games grow, move cabinet-specific helpers into
@@ -383,13 +447,15 @@ stretching, and expensive full-canvas effects.
 
 Feature-freeze the cabinet mechanics, then:
 
-1. Play at least three full Circuits and tune normalization from the split data.
-2. Run the responsive QA matrix for all four cabinets.
+1. Play at least three full Circuits (now five contracts) and tune
+   normalization from the split data — Daemon Swarm's formula in particular
+   is unplaytested against the original four's balance.
+2. Run the responsive QA matrix for all five cabinets.
 3. Normalize pause/restart/quit/records wording and sound levels.
 4. Add concise first-launch guidance for standalone play versus Circuit.
 5. Capture privacy-reviewed screenshots, verify a clean install/removal cycle,
    finalize release notes, and submit the plugin.
 
 After v1, good expansion candidates are daily seeded Circuits, optional
-mutators, gamepad support, or a fifth cabinet. They should not delay the first
-four-cabinet release.
+mutators, gamepad support, or a sixth cabinet. They should not delay the
+five-cabinet release.

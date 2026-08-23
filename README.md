@@ -1,7 +1,7 @@
 # Omacade
 
 **Insert no coins.** Omacade is a modular, theme-aware arcade for
-[Omarchy](https://omarchy.org/) with four original cabinets, one local pilot
+[Omarchy](https://omarchy.org/) with five original cabinets, one local pilot
 profile, persistent records and achievements, and a full-stack Circuit mode.
 
 ![Omacade arcade lobby](preview.png)
@@ -76,11 +76,28 @@ instead of screen flooding.
 **Controls:** mouse or arrows / `WASD` aim; click or `Space` fires; `1` / `2` /
 `3` select a firewall battery and `0` returns to automatic selection.
 
+### 05 // Daemon Swarm
+
+A super-lite survivors game. One security daemon, an endless and escalating
+swarm of rogue processes, and no aiming — your loadout auto-fires at the
+nearest threat. Collect packets dropped by kills to level up and pick new
+defenses: a piercing packet burst, a pulsing firewall ring, or an orbiting
+patch shard.
+
+Forks split into two on death, trojans hit harder and soak more damage, and
+after roughly two and a half minutes a rootkit elite periodically breaches
+with a telegraphed warning. Threat level escalates from LOW to CRITICAL the
+longer you survive; there's no win condition beyond your own uptime.
+
+**Controls:** `←` `→` `↑` `↓` or `WASD` move. Auto-fire always targets the
+nearest threat — you just need to keep moving and pick good patches.
+
 ## Omacade Circuit
 
-Press `C` in the lobby to run Lander, Rootbound, Packet Hop, and Core Command
-as one four-contract challenge. Each cabinet contributes up to 3000 normalized
-points based on its own objectives rather than incomparable raw scores.
+Press `C` in the lobby to run Lander, Rootbound, Packet Hop, Core Command, and
+Daemon Swarm as one five-contract challenge. Each cabinet contributes up to
+3000 normalized points based on its own objectives rather than incomparable
+raw scores.
 
 Two continues let you replay a completed contract before locking its result.
 The final screen records every split, remaining continues, total full-stack
@@ -162,6 +179,7 @@ omacade-gui lander
 omacade-gui rootbound
 omacade-gui packet-hop
 omacade-gui core-command
+omacade-gui daemon-swarm
 ```
 
 The original terminal cabinet remains available with `omacade lander`.
@@ -233,7 +251,7 @@ schema, implementation lessons, test safety, and architectural invariants.
 
 - Daily seeded Circuits and optional run mutators.
 - Gamepad support.
-- A fifth cabinet when it brings a genuinely different play style.
+- A sixth cabinet when it brings a genuinely different play style.
 
 ## License
 

@@ -455,6 +455,43 @@ class OmacadeTests(unittest.TestCase):
             self.assertEqual(wav[:4], b"RIFF")
             self.assertEqual(wav[8:12], b"WAVE")
 
+    def test_graphical_framework_registers_and_launches_daemon_swarm(self) -> None:
+        registry = (ROOT / "game" / "framework" / "CabinetRegistry.js").read_text(encoding="utf-8")
+        runtime = (ROOT / "game" / "framework" / "ArcadeData.qml").read_text(encoding="utf-8")
+        lobby = (ROOT / "game" / "arcade.qml").read_text(encoding="utf-8")
+        launcher = (ROOT / "omacade-gui").read_text(encoding="utf-8")
+        swarm = (ROOT / "game" / "daemon-swarm.qml").read_text(encoding="utf-8")
+
+        self.assertIn('id: "daemon-swarm"', registry)
+        self.assertIn('entry: "daemon-swarm.qml"', registry)
+        self.assertIn('id: "overclocked"', runtime)
+        self.assertIn('cabinetId === "daemon-swarm" && Number(row.stage || 1) >= 10', runtime)
+        self.assertIn('cabinetId === "daemon-swarm"', lobby)
+        self.assertIn('daemon-swarm|daemonswarm) target="$root/game/daemon-swarm.qml"', launcher)
+
+        self.assertIn('Quickshell.env("OMACADE_CIRCUIT") === "1"', swarm)
+        self.assertIn('CabinetRegistry.byId("daemon-swarm")', swarm)
+        self.assertIn('ArcadeData { id: arcadeData', swarm)
+        self.assertIn("running: !game.tooSmall", swarm)
+        self.assertIn("function updateEnemies(dt)", swarm)
+        self.assertIn("function nearestEnemy()", swarm)
+        self.assertIn("function levelUp()", swarm)
+        self.assertIn("function applyUpgrade(id)", swarm)
+        self.assertIn("function rollUpgrades()", swarm)
+        self.assertIn('type === "rootkit"', swarm)
+        self.assertIn('if (e.type === "fork")', swarm)
+        self.assertIn("maxEnemies: 90", swarm)
+        self.assertIn('difficulty: "swarm"', swarm)
+        self.assertIn("time: Math.round(elapsed), kills: kills, elites: elites", swarm)
+        self.assertIn("readonly property real worldAspect: worldWidth / worldHeight", swarm)
+        self.assertIn("width: Math.min(parent.width, parent.height * game.worldAspect)", swarm)
+        self.assertIn("renderStrategy: Canvas.Threaded", swarm)
+
+        for effect in ("launch", "hit", "levelup", "hurt", "death"):
+            wav = (ROOT / "game" / "assets" / "sfx" / f"swarm-{effect}.wav").read_bytes()
+            self.assertEqual(wav[:4], b"RIFF")
+            self.assertEqual(wav[8:12], b"WAVE")
+
     def test_flight_renderer_stays_inside_terminal_width(self) -> None:
         Settings = self.module["Settings"]
         Scores = self.module["Scores"]

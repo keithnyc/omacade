@@ -51,7 +51,9 @@ ShellRoot {
                                          : zoneIndex === 2 ? theme.accent : theme.red
       readonly property url spriteAtlas: Qt.resolvedUrl("assets/rootbound-sprites.png")
       readonly property real spriteCell: 313.5
+      onZoneAccentChanged: soilCanvas.requestPaint()
       property var soil: []
+      onSoilChanged: soilCanvas.requestPaint()
       property var enemies: []
       property var shards: []
       property var hazards: []
@@ -852,9 +854,10 @@ ShellRoot {
           clip: true
 
           Canvas {
-            id: worldCanvas
+            id: soilCanvas
             anchors.fill: parent
-            onImageLoaded: requestPaint()
+            onWidthChanged: requestPaint()
+            onHeightChanged: requestPaint()
             onPaint: {
               var context = getContext("2d")
               context.reset()
@@ -895,6 +898,16 @@ ShellRoot {
                   }
                 }
               }
+            }
+          }
+
+          Canvas {
+            id: worldCanvas
+            anchors.fill: parent
+            onImageLoaded: requestPaint()
+            onPaint: {
+              var context = getContext("2d")
+              context.reset()
 
               for (var unstable = 0; unstable < game.unstableCells.length; unstable++) {
                 var cacheCell = game.unstableCells[unstable]
