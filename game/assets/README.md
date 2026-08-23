@@ -33,9 +33,20 @@ Final generation prompt:
 > spark. Keep every sprite centered and isolated in an equal cell, with no grid,
 > labels, letters, UI, watermark, or background.
 
-# Packet Hop sprite atlas
+# Packet Hop sprites (removed)
 
-`packet-hop-sprites.png` is an original 1254×1254 transparent 4×4 pixel-art
+Packet Hop originally rendered every carrier, hazard, port, pickup, and the
+courier packet from a five-iteration AI-generated sprite atlas, described
+below for the historical record. Across several passes the art never read as
+clean, cohesive network imagery — collision/gap tuning was solid, but the
+visuals themselves stayed muddy. Rather than keep iterating on sprite art,
+Packet Hop's rendering was rebuilt around layered-stroke primitive shapes —
+the same technique already used by Core Command and Daemon Swarm — keeping
+every lane/collision/scoring behavior byte-for-byte identical. The
+`packet-hop-sprites*.png` files were deleted; `game/packet-hop.qml` no longer
+loads any image.
+
+`packet-hop-sprites.png` was an original 1254×1254 transparent 4×4 pixel-art
 atlas generated with OpenAI's built-in image generation tool for Cabinet 03.
 It contains courier packet states, process traffic, network carriers, root
 sockets, TTL pickup, and routing effects.

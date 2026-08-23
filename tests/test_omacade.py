@@ -387,7 +387,13 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("onTriggered: game.queueNetworkEvent()", packet_hop)
         self.assertIn('text: "●  " + game.eventName', packet_hop)
         self.assertIn('"SYN  →  ACK // ROUTE ADDED"', packet_hop)
-        self.assertIn('Qt.resolvedUrl("assets/packet-hop-sprites-v5.png")', packet_hop)
+        self.assertNotIn("drawSprite", packet_hop)
+        self.assertNotIn("spriteAtlas", packet_hop)
+        self.assertIn("function drawCarrier(context, kind, laneType, cx, cy, w, h, direction, opacity)", packet_hop)
+        self.assertIn("function drawPort(context, cx, cy, h, bound)", packet_hop)
+        self.assertIn("function drawTtlIcon(context, cx, cy, r)", packet_hop)
+        self.assertIn("function drawCacheIcon(context, cx, cy, r)", packet_hop)
+        self.assertIn("function drawCourier(context, cx, cy, size, courierMode, opacity)", packet_hop)
         self.assertIn("readonly property real spriteScale: 0.76", packet_hop)
         self.assertIn("item.width * spriteScale / 2", packet_hop)
         self.assertIn("readonly property real playfieldAspect: columns / rows", packet_hop)
@@ -402,10 +408,9 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("var flowPhase = game.animationTime * flow.speed * game.laneSpeedFactor(flow) * flow.direction * 1.45", packet_hop)
         self.assertIn("anchors.topMargin: game.cellHeight + 8", packet_hop)
 
-        packet_sprite = (ROOT / "game" / "assets" / "packet-hop-sprites-v5.png").read_bytes()
-        self.assertEqual(packet_sprite[:8], b"\x89PNG\r\n\x1a\n")
-        self.assertEqual(int.from_bytes(packet_sprite[16:20], "big"), 1254)
-        self.assertEqual(int.from_bytes(packet_sprite[20:24], "big"), 1254)
+        for sprite_name in ("packet-hop-sprites.png", "packet-hop-sprites-v2.png", "packet-hop-sprites-v3.png",
+                            "packet-hop-sprites-v4.png", "packet-hop-sprites-v5.png"):
+            self.assertFalse((ROOT / "game" / "assets" / sprite_name).exists(), sprite_name)
         for effect in ("hop", "bind", "drop", "stage", "ttl"):
             wav = (ROOT / "game" / "assets" / "sfx" / f"packet-{effect}.wav").read_bytes()
             self.assertEqual(wav[:4], b"RIFF")

@@ -42,8 +42,10 @@ ShellRoot {
       readonly property int columns: 15
       readonly property int rows: 12
       readonly property real playfieldAspect: columns / rows
-      readonly property url spriteAtlas: Qt.resolvedUrl("assets/packet-hop-sprites-v5.png")
-      readonly property real spriteCell: 313.5
+      // Visual-to-hitbox scale factor: primitives render a bit smaller than
+      // their lane slot so gaps stay visually trustworthy. Collision math
+      // (itemOverlap, hazardOverlap, awardNearMiss) depends on this too --
+      // keep visuals and hitboxes using the same factor.
       readonly property real spriteScale: 0.76
       readonly property string zoneName: stage === 1 ? "/LAN" : stage === 2 ? "/WAN" : stage === 3 ? "/VPN" : "/ROOT"
       readonly property string routeRule: stage === 1 ? "LOCAL TRAFFIC // SWITCHES BUFFER"
@@ -111,23 +113,198 @@ ShellRoot {
                                              : theme.muted
 
       Component.onCompleted: {
-        worldCanvas.loadImage(spriteAtlas)
         buildStage()
         mode = "attract"
         forceActiveFocus()
       }
 
-      function drawSprite(context, column, row, centerX, centerY, drawWidth, drawHeight, opacity, flipX) {
-        if (!worldCanvas.isImageLoaded(spriteAtlas)) return false
-        var scaledWidth = drawWidth * spriteScale
-        var scaledHeight = drawHeight * spriteScale
+      function drawCarrier(context, kind, laneType, cx, cy, w, h, direction, opacity) {
+        var hostile = laneType === "process"
+        var col = hostile
+          ? (kind === "service" ? theme.orange : kind === "package" ? theme.yellow : kind === "firewall" ? theme.red : theme.accent)
+          : theme.accent
+        var visualShrink = 0.62
+        var hw = w / 2 * visualShrink
+        var hh = h * 0.28 * visualShrink
         context.save()
-        context.globalAlpha = opacity === undefined ? 1 : opacity
-        context.translate(centerX, centerY)
-        context.scale(flipX ? -1 : 1, 1)
-        context.drawImage(spriteAtlas,
-                          column * spriteCell, row * spriteCell, spriteCell, spriteCell,
-                          -scaledWidth / 2, -scaledHeight / 2, scaledWidth, scaledHeight)
+        context.translate(cx, cy)
+
+        context.globalAlpha = opacity * 0.14
+        context.strokeStyle = col
+        context.lineWidth = hh * 1.5
+        context.beginPath(); context.moveTo(-hw * 0.6, 0); context.lineTo(hw * 0.6, 0); context.stroke()
+
+        context.globalAlpha = opacity
+        context.lineWidth = 2.2
+        context.strokeStyle = col
+        context.fillStyle = theme.background
+
+        if (kind === "pipe") {
+          context.fillRect(-hw, -hh, w, hh * 2)
+          context.strokeRect(-hw, -hh, w, hh * 2)
+          context.beginPath()
+          context.moveTo(-hw * 0.34, -hh); context.lineTo(-hw * 0.34, hh)
+          context.moveTo(hw * 0.34, -hh); context.lineTo(hw * 0.34, hh)
+          context.stroke()
+        } else if (kind === "container") {
+          context.fillRect(-hw, -hh, w, hh * 2)
+          context.strokeRect(-hw, -hh, w, hh * 2)
+          context.globalAlpha = opacity * 0.75
+          context.beginPath()
+          context.moveTo(0, -hh); context.lineTo(0, hh)
+          context.moveTo(-hw, 0); context.lineTo(hw, 0)
+          context.stroke()
+        } else if (kind === "ssh") {
+          context.fillRect(-hw, -hh, w, hh * 2)
+          context.strokeRect(-hw, -hh, w, hh * 2)
+          context.globalAlpha = opacity * 0.9
+          context.fillStyle = col
+          context.beginPath()
+          context.moveTo(0, -hh * 0.6); context.lineTo(hh * 0.55, 0); context.lineTo(0, hh * 0.6); context.lineTo(-hh * 0.55, 0)
+          context.closePath(); context.fill()
+        } else if (kind === "vpn") {
+          context.strokeRect(-hw, -hh, w, hh * 2)
+          context.globalAlpha = opacity * 0.55
+          context.lineWidth = 1.3
+          context.strokeRect(-hw * 0.7, -hh * 0.65, hw * 1.4, hh * 1.3)
+        } else if (kind === "window") {
+          context.strokeRect(-hw, -hh, w, hh * 2)
+          context.globalAlpha = opacity * 0.55
+          context.lineWidth = 1.3
+          context.beginPath()
+          context.moveTo(0, -hh); context.lineTo(0, hh)
+          context.moveTo(-hw, 0); context.lineTo(hw, 0)
+          context.stroke()
+        } else if (kind === "service") {
+          var breathe = 1 + 0.08 * Math.sin(animationTime * 5)
+          context.beginPath()
+          context.moveTo(-hw * breathe, 0)
+          context.lineTo(-hw * 0.4 * breathe, -hh * 1.3)
+          context.lineTo(hw * 0.4 * breathe, -hh * 1.3)
+          context.lineTo(hw * breathe, 0)
+          context.lineTo(hw * 0.4 * breathe, hh * 1.3)
+          context.lineTo(-hw * 0.4 * breathe, hh * 1.3)
+          context.closePath()
+          context.fill(); context.stroke()
+        } else if (kind === "package") {
+          context.fillRect(-hw, -hh * 0.7, w, hh * 1.4)
+          context.strokeRect(-hw, -hh * 0.7, w, hh * 1.4)
+          context.globalAlpha = opacity * 0.8
+          context.beginPath()
+          context.moveTo(-hw * 0.45, -hh * 0.7); context.lineTo(0, -hh * 1.5); context.lineTo(hw * 0.45, -hh * 0.7)
+          context.stroke()
+        } else {
+          context.strokeRect(-hw, -hh, w, hh * 2)
+          var bars = 4
+          context.lineWidth = 1.6
+          for (var b = 1; b < bars; b++) {
+            var bx = -hw + b * (w / bars)
+            context.beginPath(); context.moveTo(bx, -hh); context.lineTo(bx, hh); context.stroke()
+          }
+        }
+
+        context.globalAlpha = opacity
+        context.fillStyle = col
+        var noseX = direction >= 0 ? hw : -hw
+        var noseTip = noseX + (direction >= 0 ? 1 : -1) * hh * 0.75
+        context.beginPath()
+        context.moveTo(noseX, -hh * 0.65)
+        context.lineTo(noseTip, 0)
+        context.lineTo(noseX, hh * 0.65)
+        context.closePath()
+        context.fill()
+
+        context.restore()
+        return true
+      }
+
+      function drawPort(context, cx, cy, h, bound) {
+        var col = bound ? theme.green : theme.muted
+        var r = h * 0.42 * 0.6
+        context.save()
+        context.translate(cx, cy)
+        context.globalAlpha = bound ? 0.9 : 0.55
+        context.strokeStyle = col
+        context.lineWidth = bound ? 2.6 : 1.8
+        context.beginPath()
+        for (var i = 0; i < 6; i++) {
+          var ang = Math.PI / 3 * i - Math.PI / 2
+          var vx = Math.cos(ang) * r, vy = Math.sin(ang) * r
+          if (i === 0) context.moveTo(vx, vy); else context.lineTo(vx, vy)
+        }
+        context.closePath()
+        if (bound) { context.fillStyle = theme.background; context.fill() }
+        context.stroke()
+        context.globalAlpha = 1
+        context.fillStyle = col
+        context.beginPath()
+        context.arc(0, 0, bound ? 4 : 2.4, 0, Math.PI * 2)
+        context.fill()
+        context.restore()
+        return true
+      }
+
+      function drawTtlIcon(context, cx, cy, r) {
+        r = r * 0.62
+        context.save()
+        context.translate(cx, cy)
+        context.strokeStyle = theme.accent
+        context.lineWidth = 2.2
+        context.beginPath(); context.arc(0, 0, r, 0, Math.PI * 2); context.stroke()
+        var handAngle = animationTime * 3
+        context.beginPath()
+        context.moveTo(0, 0)
+        context.lineTo(Math.cos(handAngle) * r * 0.7, Math.sin(handAngle) * r * 0.7)
+        context.stroke()
+        context.lineWidth = 1.4
+        context.beginPath()
+        context.moveTo(0, 0)
+        context.lineTo(Math.cos(handAngle * 0.35) * r * 0.45, Math.sin(handAngle * 0.35) * r * 0.45)
+        context.stroke()
+        context.fillStyle = theme.accent
+        context.beginPath(); context.arc(0, 0, 1.6, 0, Math.PI * 2); context.fill()
+        context.restore()
+        return true
+      }
+
+      function drawCacheIcon(context, cx, cy, r) {
+        r = r * 0.62
+        context.save()
+        context.translate(cx, cy)
+        context.strokeStyle = theme.green
+        context.lineWidth = 2
+        for (var i = -1; i <= 1; i++) {
+          context.globalAlpha = i === 0 ? 1 : 0.6
+          context.beginPath()
+          context.arc(0, i * r * 0.55, r * 0.55, 0, Math.PI * 2)
+          context.stroke()
+        }
+        context.globalAlpha = 1
+        context.restore()
+        return true
+      }
+
+      function drawCourier(context, cx, cy, size, courierMode, opacity) {
+        var pulse = courierMode === "binding" ? 0.5 + 0.5 * Math.sin(animationTime * 14) : 0
+        var r = size * 0.5 * 0.48 * (1 + pulse * 0.15)
+        context.save()
+        context.translate(cx, cy)
+        context.globalAlpha = opacity * 0.1
+        context.strokeStyle = theme.accent
+        context.lineWidth = r * 0.22
+        context.beginPath()
+        context.moveTo(0, -r * 1.05); context.lineTo(r * 1.05, 0); context.lineTo(0, r * 1.05); context.lineTo(-r * 1.05, 0)
+        context.closePath(); context.stroke()
+        context.globalAlpha = opacity
+        context.lineWidth = 2.6
+        context.strokeStyle = theme.accent
+        context.fillStyle = theme.background
+        context.beginPath()
+        context.moveTo(0, -r); context.lineTo(r, 0); context.lineTo(0, r); context.lineTo(-r, 0)
+        context.closePath()
+        context.fill(); context.stroke()
+        context.fillStyle = theme.foreground
+        context.beginPath(); context.arc(0, 0, r * 0.22, 0, Math.PI * 2); context.fill()
         context.restore()
         return true
       }
@@ -900,7 +1077,6 @@ ShellRoot {
           Canvas {
             id: worldCanvas
             anchors.fill: parent
-            onImageLoaded: requestPaint()
             onPaint: {
               var context = getContext("2d")
               context.reset()
@@ -979,9 +1155,8 @@ ShellRoot {
                   context.stroke()
                   context.globalAlpha = 1
                 }
-                game.drawSprite(context, socket.bound ? 1 : 0, 3,
-                                (socket.x + 0.5) * game.cellWidth, game.cellHeight * 0.5,
-                                game.cellWidth * 1.55, game.cellHeight * 1.38, 1, false)
+                game.drawPort(context, (socket.x + 0.5) * game.cellWidth, game.cellHeight * 0.5,
+                              game.cellHeight * 1.38 * game.spriteScale, socket.bound)
                 if (socket.bound) {
                   context.globalAlpha = 0.32 + 0.15 * Math.sin(game.animationTime * 4 + socket.x)
                   context.strokeStyle = theme.green
@@ -995,10 +1170,6 @@ ShellRoot {
 
               for (var l = 0; l < game.lanes.length; l++) {
                 var traffic = game.lanes[l]
-                var spriteRow = traffic.type === "process" ? 1 : 2
-                var spriteColumn = traffic.kind === "service" || traffic.kind === "pipe" ? 0
-                                 : traffic.kind === "package" || traffic.kind === "container" ? 1
-                                 : traffic.kind === "window" || traffic.kind === "ssh" ? 2 : 3
                 var trafficActive = game.laneIsActive(traffic)
                 var trafficWarning = game.laneIsWarning(traffic)
                 if (trafficWarning) {
@@ -1071,10 +1242,10 @@ ShellRoot {
                     context.beginPath(); context.moveTo(streakTailX, streakVY); context.lineTo(streakVX, streakVY); context.stroke()
                     context.globalAlpha = 1
                   }
-                  game.drawSprite(context, spriteColumn, spriteRow,
-                                  (vehicle.x + 0.5) * game.cellWidth, (traffic.row + 0.5) * game.cellHeight,
-                                  game.cellWidth * vehicle.width, game.cellHeight * 1.18,
-                                  spriteOpacity, traffic.direction < 0)
+                  game.drawCarrier(context, traffic.kind, traffic.type,
+                                    (vehicle.x + 0.5) * game.cellWidth, (traffic.row + 0.5) * game.cellHeight,
+                                    game.cellWidth * vehicle.width * game.spriteScale, game.cellHeight * 1.18 * game.spriteScale,
+                                    traffic.direction, spriteOpacity)
 
                   if (traffic.kind === "window") {
                     var beamX = (game.dpiBeamX(traffic, vehicle) + 0.5) * game.cellWidth
@@ -1106,7 +1277,7 @@ ShellRoot {
                 context.arc(ttlX, ttlY, game.cellHeight * 0.4, 0, Math.PI * 2)
                 context.stroke()
                 context.globalAlpha = 1
-                game.drawSprite(context, 2, 3, ttlX, ttlY, game.cellWidth * 1.15, game.cellHeight * 1.15, 1, false)
+                game.drawTtlIcon(context, ttlX, ttlY, game.cellHeight * 0.58 * game.spriteScale)
               }
 
               if (game.cachePickup.active) {
@@ -1120,8 +1291,7 @@ ShellRoot {
                 context.arc(cacheX, cacheY, game.cellHeight * 0.42, 0, Math.PI * 2)
                 context.stroke()
                 context.globalAlpha = 1
-                game.drawSprite(context, 3, 3, cacheX, cacheY,
-                                game.cellWidth * 1.15, game.cellHeight * 1.15, 1, false)
+                game.drawCacheIcon(context, cacheX, cacheY, game.cellHeight * 0.5 * game.spriteScale)
                 context.fillStyle = theme.surface
                 context.fillRect(cacheX - 54, cacheY - game.cellHeight * 0.58, 108, 17)
                 context.strokeStyle = theme.green
@@ -1133,8 +1303,7 @@ ShellRoot {
 
               var px = (game.playerVisualX + 0.5) * game.cellWidth
               var py = (game.playerVisualY + 0.5) * game.cellHeight
-              var courierFrame = game.mode === "binding" ? 2 : game.mode === "dropping" ? 3 : Math.floor(game.animationTime * 5) % 2
-              var courierScale = game.mode === "dropping" ? 1.9 : 1.38
+              var courierScale = game.mode === "dropping" ? 1.25 : 0.85
               if (game.mode === "playing" || game.mode === "binding") {
                 var courierPulse = 3 * Math.sin(game.animationTime * 5)
                 context.globalAlpha = 0.16
@@ -1154,15 +1323,14 @@ ShellRoot {
               var trailDY = game.playerVisualY - game.playerY
               if (game.mode === "playing" && Math.abs(trailDX) + Math.abs(trailDY) > 0.04) {
                 for (var ghost = 3; ghost >= 1; ghost--)
-                  game.drawSprite(context, courierFrame, 0,
-                                  px + trailDX * game.cellWidth * ghost * 0.28,
-                                  py + trailDY * game.cellHeight * ghost * 0.28,
-                                  game.cellWidth * courierScale, game.cellHeight * courierScale,
-                                  0.04 + ghost * 0.035, false)
+                  game.drawCourier(context,
+                                    px + trailDX * game.cellWidth * ghost * 0.28,
+                                    py + trailDY * game.cellHeight * ghost * 0.28,
+                                    game.cellWidth * courierScale * game.spriteScale, game.mode,
+                                    0.04 + ghost * 0.035)
               }
-              game.drawSprite(context, courierFrame, 0, px, py,
-                              game.cellWidth * courierScale, game.cellHeight * courierScale,
-                              game.mode === "dropping" ? Math.max(0.25, game.transitionLife / 0.85) : 1, false)
+              game.drawCourier(context, px, py, game.cellWidth * courierScale * game.spriteScale, game.mode,
+                                game.mode === "dropping" ? Math.max(0.25, game.transitionLife / 0.85) : 1)
             }
           }
 

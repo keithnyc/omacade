@@ -87,7 +87,7 @@ Omarchy's long-running shell.
 | `game/framework/ArcadeTheme.qml` | Watches Omarchy's current `colors.toml` and exposes the shared palette. |
 | `game/shell.qml` | Graphical Lander. The generic filename is historical; it is Cabinet 01, not the lobby shell. |
 | `game/rootbound.qml` | Rootbound simulation, input pacing, combat, stage generation, sprites, HUD, and scoring. |
-| `game/packet-hop.qml` | Packet Hop grid simulation, lane/carrier rules, network events, responsive rails, sprites, and scoring. |
+| `game/packet-hop.qml` | Packet Hop grid simulation, lane/carrier rules, network events, responsive rails, primitive rendering, and scoring. |
 | `game/core-command.qml` | Core Command world simulation, fixed-aspect renderer, threat/interceptor logic, service abilities, and scoring. |
 | `game/daemon-swarm.qml` | Daemon Swarm world simulation, auto-fire/leveling/upgrade-pool logic, swarm AI, and scoring. |
 | `game/assets/` | Raster sprite sheets, standalone sprites, and synthesized WAV effects. |
@@ -244,24 +244,36 @@ runs rather than raw cabinet highscores, and preserve the 3000-point cap.
 - Compact layouts hide/reflow the rails. Test both a single wide window and a
   narrow tiled window; this game received multiple passes specifically for
   those two shapes.
-- Sprite collision/readability is more important than large art. Vehicles and
+- Collision/readability is more important than large art. Vehicles and
   carriers were reduced until gaps became visually trustworthy.
 - Network events always have a warning phase, affected-lane callout, active
   HUD state, and visible gameplay effect. The player should not need to infer
   what “packet loss” or “route flap” means.
-- Sprite language matters: packets, ports, firewalls, switches, carriers, and
-  hazards should read as network objects. Atlas source rectangles must be
-  checked carefully; one red hazard previously rendered a duplicated half
-  sprite because its crop crossed the wrong cell.
-- Neon accents (carrier motion streaks, a pulsing halo behind the player
-  courier, glow rings on pickups and bound ports, a warning-phase radar
-  sweep on the affected lane) are layered *underneath/around* the existing
-  sprites using Core Command's layered-stroke technique, not a replacement
-  for them. This was a deliberate choice over redoing the cabinet in pure
-  Geometry-Wars primitives: the sprite-based readability above took real
-  tuning to get right, and a full rewrite would have re-risked all of it.
-  Keep any new accent low-alpha and within roughly the sprite's own
-  footprint so it doesn't visually shrink the gaps between vehicles.
+- Rendering was originally a five-iteration AI sprite atlas. After it never
+  read as clean network imagery, it was fully replaced with Core Command/
+  Daemon Swarm-style layered-stroke primitives (`drawCarrier`, `drawPort`,
+  `drawTtlIcon`, `drawCacheIcon`, `drawCourier`) — see `game/assets/README.md`
+  for the removal rationale. `spriteScale` (0.76) is kept as the property
+  name for continuity but now only feeds the primitive draw calls; it is
+  still shared with collision math (`itemOverlap`, `hazardOverlap`,
+  `awardNearMiss`) and must stay in sync with anything that changes hitbox
+  size.
+- Because the board scales its cell size directly off the live window
+  (`playfield.width/height ÷ columns/rows`, unlike Core Command/Daemon
+  Swarm's fixed-world-then-letterbox approach), primitive footprints grow
+  with window size uncapped. A bounding box that matched the old sprite math
+  exactly still read as oversized once drawn as solid strokes/fills instead
+  of sparse pixel art — sprites carry built-in transparent padding that
+  primitives don't get for free. Each draw function now applies its own
+  visual-only shrink constant (`visualShrink` in `drawCarrier`, similar
+  inline factors in the others) on top of the shared `spriteScale`, purely
+  for rendered size — never touch collision math to fix a "too big/small"
+  visual report. The player courier in particular needed both a smaller
+  `courierScale` and a tamed halo (kept low-alpha, close to the body) so it
+  doesn't read as a dominant badge sitting on top of the lane traffic.
+  When retuning any of this, test at a large tiled window, not just a
+  narrow one — oversizing was invisible at ~1000px wide and obvious above
+  ~2000px.
 
 ### Core Command
 

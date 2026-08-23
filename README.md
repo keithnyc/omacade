@@ -21,7 +21,10 @@ The cabinet adds a rotating pixel-art lander, engine plume, touchdown dust,
 crash debris, twinkling stars, and occasional comets over a generated lunar
 surface.
 
-<p align="center"><img src="docs/screenshots/lander.png" alt="Lander gameplay" width="760"></p>
+<p align="center">
+  <img src="docs/screenshots/lander-title.png" alt="Lander title screen" width="372">
+  <img src="docs/screenshots/lander.png" alt="Lander gameplay" width="372">
+</p>
 
 **Controls:** `←` / `A` and `→` / `D` rotate; `↑` / `W` / `Space` thrust;
 `1` / `2` / `3` select Cadet, Pilot, or Ace.
@@ -37,7 +40,10 @@ digging resistance, daemon behavior, hazards, and bonus objectives. Later zones
 introduce moving log blocks, rebuilding cache cells, unstable terrain, and
 timed firewall gates rather than merely making the same enemies faster.
 
-<p align="center"><img src="docs/screenshots/rootbound.png" alt="Rootbound gameplay" width="760"></p>
+<p align="center">
+  <img src="docs/screenshots/rootbound-title.png" alt="Rootbound title screen" width="372">
+  <img src="docs/screenshots/rootbound.png" alt="Rootbound gameplay" width="372">
+</p>
 
 **Controls:** arrows or `WASD` dig and move; hold `Space` to charge and route a
 purge pulse through connected tunnels.
@@ -54,7 +60,10 @@ Telegraphed cache hits, packet-loss windows, traffic bursts, and route flaps
 temporarily rewrite a lane's rules while the ingress and egress rails explain
 exactly what changed.
 
-<p align="center"><img src="docs/screenshots/packet-hop.png" alt="Packet Hop gameplay" width="760"></p>
+<p align="center">
+  <img src="docs/screenshots/packet-hop-title.png" alt="Packet Hop title screen" width="372">
+  <img src="docs/screenshots/packet-hop.png" alt="Packet Hop gameplay" width="372">
+</p>
 
 **Controls:** arrows or `WASD` hop one route cell at a time. Time each move from
 the visible sprite gaps—the logical board always preserves square cells.
@@ -71,7 +80,10 @@ salvos, and rotating three-layer zero-day sieges. Ammunition, battery cooldowns,
 a shared launch bus, and two in-flight slots per node reward deliberate shots
 instead of screen flooding.
 
-<p align="center"><img src="docs/screenshots/core-command.png" alt="Core Command gameplay" width="760"></p>
+<p align="center">
+  <img src="docs/screenshots/core-command-title.png" alt="Core Command title screen" width="372">
+  <img src="docs/screenshots/core-command.png" alt="Core Command gameplay" width="372">
+</p>
 
 **Controls:** mouse or arrows / `WASD` aim; click or `Space` fires; `1` / `2` /
 `3` select a firewall battery and `0` returns to automatic selection.
@@ -93,6 +105,11 @@ onward a rootkit elite periodically breaches with a telegraphed warning.
 Threat level escalates from LOW to CRITICAL as the waves climb, and enemy
 strength keeps pace with your build — the only way to stay overpowered for
 long is to keep clearing waves faster than they scale.
+
+<p align="center">
+  <img src="docs/screenshots/daemon-swarm-title.png" alt="Daemon Swarm title screen" width="372">
+  <img src="docs/screenshots/daemon-swarm.png" alt="Daemon Swarm gameplay" width="372">
+</p>
 
 **Controls:** `←` `→` `↑` `↓` or `WASD` move. Auto-fire always targets the
 nearest threat — you just need to keep moving and pick good patches.
