@@ -9,6 +9,8 @@ arcade-floor lobby tracks one local pilot profile, cabinet records, session
 recaps, and achievements across all four. Its Omacade Circuit mode turns the
 entire floor into one four-contract run with normalized scoring and two retries.
 
+![Omacade arcade lobby](preview.png)
+
 Lander is an original graphical game inspired by the broad lunar-landing genre.
 Rotate, manage a limited fuel supply, and settle both feet onto a marked pad.
 It runs in its own Quickshell window, uses real key-down/key-up input, and draws
