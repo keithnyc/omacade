@@ -310,7 +310,7 @@ ShellRoot {
                        damage: 1 + Math.floor((burstLevel - 1) / 2), pierce: burstLevel - 1,
                        travelled: 0, maxRange: 760, hitIds: [] })
         bolts = updated
-        burstCooldown = Math.max(0.22, 0.9 - (burstLevel - 1) * 0.08)
+        burstCooldown = Math.max(0.22, 1.15 - (burstLevel - 1) * 0.08)
       }
 
       function pulseRing() {

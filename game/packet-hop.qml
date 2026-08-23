@@ -1263,7 +1263,7 @@ ShellRoot {
               anchors.fill: parent
               anchors.margins: 24
               spacing: 8
-              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "PACKET//HOP // TOP TEN"; color: theme.accent; font.pixelSize: 23; font.bold: true }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "PACKET::HOP // TOP TEN"; color: theme.accent; font.pixelSize: 23; font.bold: true }
               Text { text: " #    ROUTER      SCORE        STAGE"; color: theme.muted; font.pixelSize: 13; font.family: "monospace"; font.bold: true }
               Rectangle { width: parent.width; height: 1; color: theme.muted }
               Repeater {

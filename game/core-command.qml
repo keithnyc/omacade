@@ -1026,7 +1026,7 @@ ShellRoot {
               anchors.fill: parent
               anchors.margins: 24
               spacing: 8
-              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "CORE//COMMAND // TOP TEN"; color: theme.accent; font.pixelSize: 22; font.bold: true }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "CORE::COMMAND // TOP TEN"; color: theme.accent; font.pixelSize: 22; font.bold: true }
               Text { text: " #    PILOT       SCORE       WAVE   CHAIN"; color: theme.muted; font.pixelSize: 12; font.family: "monospace"; font.bold: true }
               Rectangle { width: parent.width; height: 1; color: theme.muted }
               Repeater {

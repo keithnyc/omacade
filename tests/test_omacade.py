@@ -442,7 +442,7 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("property int perfectWaves", core_command)
         self.assertIn("if (onlineServices === services.length) perfectWaves += 1", core_command)
         self.assertIn("maxChain: maxChain, perfectWaves: perfectWaves", core_command)
-        self.assertIn('text: "CORE//COMMAND // TOP TEN"', core_command)
+        self.assertIn('text: "CORE::COMMAND // TOP TEN"', core_command)
         self.assertIn('statusMessage = "THREAT SALVO // CHAIN WINDOW OPEN"', core_command)
         self.assertIn("readonly property real worldAspect: worldWidth / worldHeight", core_command)
         self.assertIn("width: Math.min(parent.width, parent.height * game.worldAspect)", core_command)
