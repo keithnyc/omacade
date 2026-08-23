@@ -140,6 +140,10 @@ those same timestamped run records as a process-safe completion handshake and
 never couples the four game loops together. See
 `game/framework/README.md` for the cabinet contract.
 
+For the full maintainer handoff—including architecture, persistence and Circuit
+contracts, cabinet-specific implementation notes, live-test safety, and the v1
+finish checklist—see [DEVELOPMENT.md](DEVELOPMENT.md).
+
 Validate the repository with Omarchy's own validator:
 
 ```sh
