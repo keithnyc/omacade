@@ -1238,6 +1238,7 @@ ShellRoot {
                   font.pixelSize: 15
                   font.family: "monospace"
                   font.bold: row && index === 0
+                  textFormat: Text.PlainText
                 }
               }
               Item { width: 1; height: 3 }

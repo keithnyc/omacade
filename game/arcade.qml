@@ -524,7 +524,7 @@ ShellRoot {
                 spacing: 8
                 Row {
                   width: parent.width
-                  Text { id: profileTitle; text: "PLAYER PROFILE // " + (arcadeData.defaultInitials || "---"); color: theme.accent; font.pixelSize: 15; font.family: "monospace"; font.bold: true }
+                  Text { id: profileTitle; text: "PLAYER PROFILE // " + (arcadeData.defaultInitials || "---"); color: theme.accent; font.pixelSize: 15; font.family: "monospace"; font.bold: true; textFormat: Text.PlainText }
                   Item { width: Math.max(8, parent.width - profileTitle.implicitWidth - profileEdit.implicitWidth); height: 1 }
                   Text { id: profileEdit; text: "I  EDIT"; color: theme.muted; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
                 }
@@ -793,6 +793,7 @@ ShellRoot {
                 font.pixelSize: 15
                 font.family: "monospace"
                 font.bold: row && index === 0
+                textFormat: Text.PlainText
               }
             }
             Item { width: 1; height: 4 }

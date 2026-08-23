@@ -1238,6 +1238,7 @@ ShellRoot {
                   font.pixelSize: 15
                   font.family: "monospace"
                   font.bold: row && index === 0
+                  textFormat: Text.PlainText
                 }
               }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "H / ENTER / ESC  CLOSE"; color: theme.muted; font.pixelSize: 11; font.family: "monospace" }

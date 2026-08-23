@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
+import os
 import runpy
 import re
 import subprocess
@@ -242,6 +244,72 @@ class OmacadeTests(unittest.TestCase):
         self.assertEqual(restored.landings, 11)
         self.assertEqual(len(restored.data["lander"]), 10)
         self.assertTrue(all(row["initials"] == "AB9" for row in restored.data["lander"]))
+
+    def test_read_regular_file_refuses_symlinks_special_files_and_oversized_data(self) -> None:
+        read_regular_file = self.module["read_regular_file"]
+        base = Path(self.temp_dir.name)
+
+        normal = base / "normal.json"
+        normal.write_text('{"ok": true}\n', encoding="utf-8")
+        self.assertEqual(read_regular_file(normal), '{"ok": true}\n')
+
+        target = base / "real-target.json"
+        target.write_text('{"real": true}\n', encoding="utf-8")
+        symlink = base / "via-symlink.json"
+        symlink.symlink_to(target)
+        self.assertIsNone(read_regular_file(symlink))
+
+        fifo = base / "a-fifo"
+        os.mkfifo(fifo)
+        self.assertIsNone(read_regular_file(fifo))
+
+        oversized = base / "oversized.json"
+        oversized.write_text("x" * 32, encoding="utf-8")
+        self.assertIsNone(read_regular_file(oversized, max_bytes=8))
+        self.assertEqual(read_regular_file(oversized, max_bytes=64), "x" * 32)
+
+        self.assertIsNone(read_regular_file(base / "does-not-exist.json"))
+
+    def test_write_json_replaces_destination_symlink_without_writing_through_it(self) -> None:
+        write_json = self.module["write_json"]
+        read_regular_file = self.module["read_regular_file"]
+        base = Path(self.temp_dir.name)
+
+        other_owner_file = base / "someone-elses-file.json"
+        other_owner_file.write_text('{"untouched": true}\n', encoding="utf-8")
+        destination = base / "scores.json"
+        destination.symlink_to(other_owner_file)
+
+        write_json(destination, {"hello": "world"})
+
+        self.assertFalse(destination.is_symlink())
+        self.assertEqual(json.loads(read_regular_file(destination)), {"hello": "world"})
+        self.assertEqual(other_owner_file.read_text(encoding="utf-8"), '{"untouched": true}\n')
+
+        leftovers = [p for p in base.iterdir() if p.name.startswith("scores.json.") and p.name.endswith(".tmp")]
+        self.assertEqual(leftovers, [])
+
+    def test_theme_and_settings_fall_back_safely_when_state_paths_are_symlinks(self) -> None:
+        Theme = self.module["Theme"]
+        Settings = self.module["Settings"]
+        globals_ = self.module["Lander"].__init__.__globals__
+        base = Path(self.temp_dir.name)
+
+        theme_target = base / "not-the-real-theme.toml"
+        theme_target.write_text('accent = "#ff00ff"\n', encoding="utf-8")
+        globals_["THEME_PATH"].parent.mkdir(parents=True, exist_ok=True)
+        globals_["THEME_PATH"].symlink_to(theme_target)
+
+        theme = Theme()
+        self.assertEqual(theme.raw["accent"], self.module["FALLBACK"]["accent"])
+
+        config_target = base / "not-the-real-config.json"
+        config_target.write_text('{"difficulty": "ace"}\n', encoding="utf-8")
+        globals_["CONFIG_PATH"].parent.mkdir(parents=True, exist_ok=True)
+        globals_["CONFIG_PATH"].symlink_to(config_target)
+
+        settings = Settings()
+        self.assertEqual(settings.difficulty, "cadet")
 
     def test_cli_reports_matching_version(self) -> None:
         result = subprocess.run(
@@ -521,6 +589,31 @@ class OmacadeTests(unittest.TestCase):
             wav = (ROOT / "game" / "assets" / "sfx" / f"swarm-{effect}.wav").read_bytes()
             self.assertEqual(wav[:4], b"RIFF")
             self.assertEqual(wav[8:12], b"WAVE")
+
+    def test_leaderboard_and_profile_text_forces_plain_text_rendering(self) -> None:
+        # scores.json rows (initials, difficulty, ...) are attacker-editable
+        # local state; every Text sink that renders them must force
+        # Text.PlainText so a crafted value can't be interpreted as markup
+        # or trigger resource loading.
+        for relative_path, needle in (
+            ("game/arcade.qml", 'text: "PLAYER PROFILE // " + (arcadeData.defaultInitials || "---")'),
+            ("game/arcade.qml", "property var row: index < arcadeData.scoreRows.length"),
+            ("game/shell.qml", "property var row: index < shell.scoreRows.length"),
+            ("game/core-command.qml", "property var row: index < arcadeData.scoreRows.length"),
+            ("game/rootbound.qml", "property var row: index < arcadeData.scoreRows.length"),
+            ("game/daemon-swarm.qml", "property var row: index < arcadeData.scoreRows.length"),
+            ("game/packet-hop.qml", "property var row: index < arcadeData.scoreRows.length"),
+        ):
+            source = (ROOT / relative_path).read_text(encoding="utf-8")
+            index = source.index(needle)
+            # The property must land within the same delegate/Text block, so
+            # look for it in a window right after the needle rather than
+            # anywhere in the file.
+            window = source[index:index + 1200]
+            self.assertIn(
+                "textFormat: Text.PlainText", window,
+                f"{relative_path}: missing textFormat: Text.PlainText near {needle!r}",
+            )
 
     def test_flight_renderer_stays_inside_terminal_width(self) -> None:
         Settings = self.module["Settings"]

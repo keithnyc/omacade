@@ -12,7 +12,9 @@ import re
 import select
 import shutil
 import signal
+import stat
 import sys
+import tempfile
 import termios
 import time
 import tty
@@ -120,11 +122,41 @@ def hex_rgb(value: str) -> tuple[int, int, int]:
         return (128, 128, 128)
 
 
+MAX_STATE_FILE_BYTES = 2 * 1024 * 1024  # theme/config/score files are always tiny
+
+
+def read_regular_file(path: Path, max_bytes: int = MAX_STATE_FILE_BYTES) -> Optional[str]:
+    """Read a small state file, refusing symlinks, non-regular files (FIFOs,
+    devices, sockets), and anything larger than max_bytes. Returns None on
+    any of those conditions, or if the file is missing/unreadable, so callers
+    fall back the same way a plain missing file would."""
+    try:
+        # O_NONBLOCK keeps a FIFO from hanging the open() call itself while
+        # waiting for a writer; the regular-file check below rejects FIFOs
+        # (and devices/sockets) outright before any read is attempted.
+        fd = os.open(str(path), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return None
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > max_bytes:
+            return None
+        # O_NONBLOCK has no effect on regular files, so this read can't block
+        # now that fstat has confirmed it's a regular file.
+        raw = os.read(fd, max_bytes + 1)
+        if len(raw) > max_bytes:
+            return None
+        return raw.decode("utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    finally:
+        os.close(fd)
+
+
 def parse_theme(path: Path) -> dict[str, str]:
     colors = dict(FALLBACK)
-    try:
-        raw = path.read_text(encoding="utf-8")
-    except OSError:
+    raw = read_regular_file(path)
+    if raw is None:
         return colors
     for match in re.finditer(r'^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"([^"]*)"', raw, re.M):
         colors[match.group(1)] = match.group(2)
@@ -132,18 +164,29 @@ def parse_theme(path: Path) -> dict[str, str]:
 
 
 def read_json(path: Path, fallback: dict) -> dict:
+    raw = read_regular_file(path)
+    if raw is None:
+        return dict(fallback)
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        value = json.loads(raw)
         return value if isinstance(value, dict) else dict(fallback)
-    except (OSError, ValueError, TypeError):
+    except (ValueError, TypeError):
         return dict(fallback)
 
 
 def write_json(path: Path, value: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(path)
+    fd, temp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(value, indent=2) + "\n")
+        os.replace(temp_name, str(path))
+    except BaseException:
+        try:
+            os.unlink(temp_name)
+        except OSError:
+            pass
+        raise
 
 
 class Theme:
