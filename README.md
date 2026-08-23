@@ -1,118 +1,188 @@
 # Omacade
 
 **Insert no coins.** Omacade is a modular, theme-aware arcade for
-[Omarchy](https://omarchy.org/). Version 0.1 includes polished Cabinet 01,
-**Lander**, the filesystem action game **Rootbound**, and the network-crossing
-Cabinet 03, **Packet Hop**. Cabinet 04, **Core Command**, completes the v1 floor
-with quarantine-field defense and cascading threat interception. A shared
-arcade-floor lobby tracks one local pilot profile, cabinet records, session
-recaps, and achievements across all four. Its Omacade Circuit mode turns the
-entire floor into one four-contract run with normalized scoring and two retries.
+[Omarchy](https://omarchy.org/) with four original cabinets, one local pilot
+profile, persistent records and achievements, and a full-stack Circuit mode.
 
 ![Omacade arcade lobby](preview.png)
 
-Lander is an original graphical game inspired by the broad lunar-landing genre.
-Rotate, manage a limited fuel supply, and settle both feet onto a marked pad.
-It runs in its own Quickshell window, uses real key-down/key-up input, and draws
-an original pixel-art spacecraft sprite over a theme-aware lunar landscape.
-The narrow pad pays more, but every difficulty tightens the safe velocity and
-attitude limits. A successful touchdown clears the stage; the next stage
-narrows the pads and progressively adds taller mountains, deeper crater bowls,
-and rougher terrain. Higher-value pads also gain jagged ridges and crater cuts
-around their approaches. Crashes retry the current stage.
+## The cabinets
 
-## What it feels like
+### 01 // Lander
 
-- Opens as a normal tiled graphical window.
-- Opens on an animated attract screen with difficulty, records, and controls.
-- Uses the active Omarchy palette and updates when the theme changes.
-- Draws a shaded lunar surface, illuminated pads, a rotating raster sprite,
-  continuous engine plume, twinkling stars, occasional comets, and a
-  cabinet-style flight display.
-- Adds synthesized engine, control, touchdown, crash, stage-clear, launch, and
-  comet sounds, with a persistent mute setting.
-- Throws lunar dust on touchdown and sparks, debris, and an expanding blast
-  ring on impact.
-- Includes Cadet, Pilot, and Ace flight schools.
-- Generates a new lunar surface and two scoring pads every flight.
-- Rescales the world after Hyprland tiles or resizes the cabinet, and pauses
-  behind a clear size warning if there is not enough visible play space.
-- Saves the ten best landings locally.
-- Has no network access, accounts, telemetry, or dependencies beyond the
-  Quickshell runtime already included with Omarchy.
-- Keeps the original terminal renderer available as a fallback.
+Precision lunar flight inspired by the classic landing genre. Rotate the craft,
+manage limited fuel, and settle both feet onto one of two illuminated pads. The
+narrower pad pays more, while Cadet, Pilot, and Ace tighten the safe velocity
+and attitude limits.
+
+Every successful landing opens a harder stage with narrower pads, taller
+mountains, deeper craters, rougher ground, and increasingly hostile approaches.
+The cabinet adds a rotating pixel-art lander, engine plume, touchdown dust,
+crash debris, twinkling stars, and occasional comets over a generated lunar
+surface.
+
+<p align="center"><img src="docs/screenshots/lander.png" alt="Lander gameplay" width="760"></p>
+
+**Controls:** `←` / `A` and `→` / `D` rotate; `↑` / `W` / `Space` thrust;
+`1` / `2` / `3` select Cadet, Pilot, or Ace.
+
+### 02 // Rootbound
+
+A filesystem action game inspired by underground arcade combat. Dig through
+block storage, recover package shards, and use a `sudo purge` pulse to quarantine
+rogue daemons before they overrun the mount.
+
+Its four zones—`/home`, `/var`, `/tmp`, and `/root`—change tunnel topology,
+digging resistance, daemon behavior, hazards, and bonus objectives. Later zones
+introduce moving log blocks, rebuilding cache cells, unstable terrain, and
+timed firewall gates rather than merely making the same enemies faster.
+
+<p align="center"><img src="docs/screenshots/rootbound.png" alt="Rootbound gameplay" width="760"></p>
+
+**Controls:** arrows or `WASD` dig and move; hold `Space` to charge and route a
+purge pulse through connected tunnels.
+
+### 03 // Packet Hop
+
+A network-crossing game inspired by lane-dodging arcades. Route a packet through
+hostile process traffic, ride encrypted carriers across the transit layer, and
+bind all five root ports before TTL expires.
+
+The `/LAN`, `/WAN`, `/VPN`, and `/ROOT` routes introduce switches, firewalls,
+DPI beams, SSH carriers, VPN relays, and progressively tighter TTL budgets.
+Telegraphed cache hits, packet-loss windows, traffic bursts, and route flaps
+temporarily rewrite a lane's rules while the ingress and egress rails explain
+exactly what changed.
+
+<p align="center"><img src="docs/screenshots/packet-hop.png" alt="Packet Hop gameplay" width="760"></p>
+
+**Controls:** arrows or `WASD` hop one route cell at a time. Time each move from
+the visible sprite gaps—the logical board always preserves square cells.
+
+### 04 // Core Command
+
+A stack-defense game inspired by missile-command arcades. Aim three firewall
+batteries, launch limited interceptors, and detonate expanding quarantine fields
+to catch inbound payloads and build cascading score chains.
+
+Six critical services each power a defensive ability; losing one changes how
+the stack plays. Later waves add fork bombs, stealth payloads, diving rootkits,
+salvos, and rotating three-layer zero-day sieges. Ammunition, battery cooldowns,
+a shared launch bus, and two in-flight slots per node reward deliberate shots
+instead of screen flooding.
+
+<p align="center"><img src="docs/screenshots/core-command.png" alt="Core Command gameplay" width="760"></p>
+
+**Controls:** mouse or arrows / `WASD` aim; click or `Space` fires; `1` / `2` /
+`3` select a firewall battery and `0` returns to automatic selection.
+
+## Omacade Circuit
+
+Press `C` in the lobby to run Lander, Rootbound, Packet Hop, and Core Command
+as one four-contract challenge. Each cabinet contributes up to 3000 normalized
+points based on its own objectives rather than incomparable raw scores.
+
+Two continues let you replay a completed contract before locking its result.
+The final screen records every split, remaining continues, total full-stack
+score, and the Circuit Champion achievement. If a cabinet is closed before it
+records a result, the lobby reports a lost cabinet signal and offers recovery
+instead of inventing a score.
+
+## Shared arcade features
+
+- Native graphical windows that tile and resize with Hyprland.
+- Live colors from the active Omarchy theme.
+- Responsive playfields with preserved sprite and collision geometry.
+- Keyboard-first attract screens, pause states, records, initials, and restart
+  flows.
+- One persistent three-character pilot identity across all cabinets.
+- Separate top-ten tables, run counts, personal bests, stage records, session
+  recaps, and eight cross-cabinet achievements.
+- Original raster sprites and synthesized sound effects with a persistent mute
+  setting.
+- Atomic local score writes and no network access, accounts, or telemetry.
+- Independent cabinet processes so game loops do not live inside Omarchy's
+  long-running shell.
+- Original terminal Lander retained as a fallback.
 
 ## Controls
 
+### Lobby
+
 | Key | Action |
 |---|---|
-| ← / A | Rotate counter-clockwise |
-| → / D | Rotate clockwise |
-| ↑ / W / Space | Main engine |
-| 1 / 2 / 3 | Select Cadet / Pilot / Ace and restart |
-| P | Pause |
-| H | Show or close the top-ten high scores |
-| M | Toggle sound effects |
-| R | Restart the current stage |
-| Q / Escape | Close the cabinet |
-| Enter | Advance after landing or retry after impact |
+| `←` / `→` or `A` / `D` | Select a cabinet |
+| `Enter` / `Space` | Launch selected cabinet |
+| `C` | Start Omacade Circuit |
+| `H` | Open records |
+| `I` | Edit pilot initials |
+| `M` | Toggle sound |
+| `Q` / `Escape` | Quit |
 
-From the arcade lobby, press `C` to start an Omacade Circuit. Circuit launches
-Lander, Rootbound, Packet Hop, and Core Command in order. Each cabinet contributes
-up to 3000 performance points based on its own objectives rather than raw score,
-and two continues can replay a pending contract before its result is locked.
-Completed Circuits receive a separate local Circuit record and achievement.
+### Common cabinet controls
 
-A qualifying landing opens the classic three-character initials prompt. Once
-entered, those initials are prefilled for future high scores; typing a new
-character replaces the prefill, while Enter accepts it as-is.
+| Key | Action |
+|---|---|
+| `P` | Pause / resume |
+| `H` | Open or close top-ten records |
+| `R` | Restart the current run |
+| `Q` / `Escape` | Close cabinet and return to lobby |
+| `Enter` | Start, advance, retry, or confirm initials |
+
+A qualifying score opens a classic three-character initials prompt. Saved
+initials become the default for future records and Circuit runs.
 
 ## Install
 
-Once this repository has a public Git URL:
+Install and enable the bar widget directly from GitHub:
 
 ```sh
 omarchy plugin add https://github.com/keithnyc/omacade.git --enable
 ```
 
-The plugin installer deliberately only clones and enables reviewed QML. The
-bar icon works immediately. To also install the `omacade-gui` graphical command,
-`omacade` terminal fallback, Super+Space launcher, and theme-change icon hook, run:
+Omarchy clones the repository and enables the reviewed bar widget; it does not
+execute the optional setup script. The bar icon and panel work immediately. To
+also install the `omacade-gui` graphical command, terminal fallback, Super+Space
+launcher, and theme-change icon hook, run:
 
 ```sh
 ~/.config/omarchy/plugins/io.github.keithnyc.omacade/scripts/setup-user-entry
 ```
 
-Then launch the graphical arcade lobby from the bar, Super+Space, or a terminal:
+Then launch the lobby from the bar, Super+Space, or a terminal:
 
 ```sh
 omacade-gui
 ```
 
-For development or troubleshooting, launch Lander directly:
+Launch individual cabinets for development or troubleshooting:
 
 ```sh
 omacade-gui lander
+omacade-gui rootbound
+omacade-gui packet-hop
+omacade-gui core-command
 ```
 
 The original terminal cabinet remains available with `omacade lander`.
 
-Rootbound can also be launched directly while it is under development:
+## Local data
+
+- Settings: `~/.local/state/omarchy/omacade.json`
+- Scores and progression: `~/.local/share/omacade/scores.json`
+
+Score writes are atomic. Each cabinet retains its ten best rows plus run counts,
+the most recent run, cabinet-specific performance fields, and achievement state.
+Omacade reads only these files and Omarchy's current theme palette.
+
+## Optional integration removal
+
+If you ran the optional setup script, remove its launcher, commands, and theme
+hook before removing the plugin:
 
 ```sh
-omacade-gui rootbound
-```
-
-Packet Hop can be launched directly with:
-
-```sh
-omacade-gui packet-hop
-```
-
-Core Command can be launched directly with:
-
-```sh
-omacade-gui core-command
+~/.config/omarchy/plugins/io.github.keithnyc.omacade/scripts/remove-user-entry
+omarchy plugin remove io.github.keithnyc.omacade
 ```
 
 ## Local development
@@ -126,27 +196,10 @@ omarchy plugin enable io.github.keithnyc.omacade
 ```
 
 Files under `~/.config/omarchy/plugins/` hot-reload. Run the lobby with
-`./omacade/omacade-gui`, Lander directly with `./omacade/omacade-gui lander`,
-or the terminal fallback with `./omacade/omacade lander`.
+`./omacade/omacade-gui`, a direct cabinet with `./omacade/omacade-gui <id>`, or
+the terminal fallback with `./omacade/omacade lander`.
 
-## Cabinet framework
-
-`game/arcade.qml` is the arcade lobby. Cabinet identity and launch metadata
-live in `game/framework/CabinetRegistry.js`; reusable theme and persistence
-services live beside it. Each game runs as an isolated Quickshell process, so
-adding a cabinet does not enlarge the Omarchy bar widget or couple its game
-loop to Lander. The lobby presents all cabinets at once, supports direct pilot
-initial editing with `I`, and refreshes personal-best, stage, run-count,
-achievement, and last-session data whenever a cabinet closes. Circuit mode uses
-those same timestamped run records as a process-safe completion handshake and
-never couples the four game loops together. See
-`game/framework/README.md` for the cabinet contract.
-
-For the full maintainer handoff—including architecture, persistence and Circuit
-contracts, cabinet-specific implementation notes, live-test safety, and the v1
-finish checklist—see [DEVELOPMENT.md](DEVELOPMENT.md).
-
-Validate the repository with Omarchy's own validator:
+Validate the checkout from its parent directory:
 
 ```sh
 omarchy-plugin-validate ./omacade
@@ -154,49 +207,33 @@ python3 -m py_compile ./omacade/omacade
 python3 ./omacade/tests/test_omacade.py
 ```
 
-## Local data
+## Cabinet framework
 
-- Settings: `~/.local/state/omarchy/omacade.json`
-- Scores: `~/.local/share/omacade/scores.json`
+`game/arcade.qml` is the arcade lobby and process orchestrator. Cabinet identity
+and launch metadata live in `game/framework/CabinetRegistry.js`; reusable theme
+and persistence services live beside it. Each game remains an isolated
+Quickshell process, so adding a cabinet does not enlarge the bar widget or
+couple unrelated game loops together.
 
-Score writes are atomic. The top ten retain initials, difficulty, fuel, and
-flight time. Omacade reads only its own settings and scores plus Omarchy's
-current theme file.
-
-## Optional integration removal
-
-Run this before removing the plugin if you installed the optional user entry:
-
-```sh
-~/.config/omarchy/plugins/io.github.keithnyc.omacade/scripts/remove-user-entry
-omarchy plugin remove io.github.keithnyc.omacade
-```
+Circuit uses timestamped last-run records as a process-safe completion
+handshake. See `game/framework/README.md` for the cabinet contract and
+[DEVELOPMENT.md](DEVELOPMENT.md) for the complete maintainer handoff, persistence
+schema, implementation lessons, test safety, and architectural invariants.
 
 ## Roadmap
 
-Cabinet 02, Rootbound, now combines its quarantine/compress/purge combat with an
-original pixel-art sprite atlas and four increasingly hostile filesystem zones:
-`/home`, `/var`, `/tmp`, and `/root`. Each zone changes tunnel topology, terrain
-treatment, digging resistance, daemon composition, hazards, and optional bonus
-goals. Moving log blocks, rebuilding cache cells, timed firewall gates, animated
-stage transitions, and a dedicated synthesized sound set complete the current
-gameplay pass. Cabinet 03, Packet Hop, adds a distinct lane-crossing game with
-process traffic, rideable network carriers, TTL pressure, and root-port delivery.
-Its `/LAN`, `/WAN`, `/VPN`, and `/ROOT` routes introduce firewall traffic,
-encrypted relay carriers, announced direction reversals, and progressively
-tighter TTL budgets. Packet swarms now surge, switches buffer, DPI beams sweep,
-firewalls pulse open, SSH carriers phase, and VPN relays telegraph reversals.
-Stage-gated network events now add labeled cache hits, packet-loss windows,
-burst-traffic surges, and single-lane route flaps. A dedicated HUD signal module,
-countdown warnings, affected-lane callouts, and active-state graphics explain
-each event without asking the player to memorize it. Near-miss bonuses, courier
-trails, and SYN/ACK port-binding bursts reinforce the route behaviors. Cabinet
-04, Core Command, now defends six capability-bearing services with three limited
-firewall batteries, expanding quarantine fields, chain reactions, conserved-rule
-bonuses, and progressively nastier exploits, fork bombs, stealth payloads, and
-rootkits. Service outages disable distinct stack boosts while SYNC recovery and
-a single BOOT rollback keep damaged runs recoverable. Every fifth wave introduces
-a rotating three-layer zero-day siege payload alongside the normal threat stream.
+### Before v1
+
+- Balance Circuit normalization from several complete real-world runs.
+- Finish cross-cabinet window-size, input-focus, wording, and sound-level QA.
+- Verify a clean install/removal cycle and resolve the marketplace guidance
+  around Omacade's intentionally isolated Quickshell game processes.
+
+### After v1
+
+- Daily seeded Circuits and optional run mutators.
+- Gamepad support.
+- A fifth cabinet when it brings a genuinely different play style.
 
 ## License
 
