@@ -8,6 +8,7 @@ ShellRoot {
   id: shell
 
   readonly property var cabinet: CabinetRegistry.byId("rootbound")
+  readonly property bool circuitMode: Quickshell.env("OMACADE_CIRCUIT") === "1"
   ArcadeTheme { id: theme }
   ArcadeData { id: arcadeData; cabinetId: shell.cabinet.scoreKey }
 
@@ -637,6 +638,7 @@ ShellRoot {
         if (initials) arcadeData.patchConfig({ initials: initials })
         arcadeData.recordScore({ score: score, initials: initials || "---",
                                  difficulty: "root", stage: stage, packages: packages })
+        if (shell.circuitMode) { window.visible = false; return }
         modeBeforeScores = "gameover"
         mode = "scores"
       }
@@ -710,6 +712,7 @@ ShellRoot {
         }
         if (mode === "attract" || mode === "gameover") {
           if (event.key === Qt.Key_H) openScores()
+          else if (shell.circuitMode && mode === "gameover" && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)) window.visible = false
           else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) startRun()
           else if (event.key === Qt.Key_Q || event.key === Qt.Key_Escape) window.visible = false
           event.accepted = true
@@ -1150,7 +1153,7 @@ ShellRoot {
               spacing: 12
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: game.mode === "paused" ? "PROCESS SUSPENDED" : game.mode === "stageclear" ? game.zoneName + " SANITIZED" : "KERNEL PANIC"; color: game.mode === "stageclear" ? game.zoneAccent : game.mode === "paused" ? theme.accent : theme.red; font.pixelSize: 23; font.bold: true }
               Text { visible: game.mode === "stageclear"; anchors.horizontalCenter: parent.horizontalCenter; text: game.objectiveMet ? "BONUS COMPLETE  +" + game.objectiveAward : "BONUS MISSED  //  " + game.objectiveText; color: game.objectiveMet ? theme.yellow : theme.muted; font.pixelSize: 12; font.family: "monospace"; font.bold: true }
-              Text { anchors.horizontalCenter: parent.horizontalCenter; text: game.mode === "paused" ? "P TO RESUME" : game.mode === "stageclear" ? "DESCENDING...  ·  ENTER TO SKIP" : "SCORE " + game.score + "  ·  ENTER TO REMOUNT"; color: theme.foreground; font.pixelSize: 13; font.family: "monospace" }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: game.mode === "paused" ? "P TO RESUME" : game.mode === "stageclear" ? "DESCENDING...  ·  ENTER TO SKIP" : "SCORE " + game.score + (shell.circuitMode ? "  ·  ENTER RETURN TO CIRCUIT" : "  ·  ENTER TO REMOUNT"); color: theme.foreground; font.pixelSize: 13; font.family: "monospace" }
             }
           }
 

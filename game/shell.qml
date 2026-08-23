@@ -9,6 +9,7 @@ ShellRoot {
   id: shell
 
   readonly property var cabinet: CabinetRegistry.byId("lander")
+  readonly property bool circuitMode: Quickshell.env("OMACADE_CIRCUIT") === "1"
 
   ArcadeTheme { id: arcadeTheme }
   ArcadeData { id: arcadeData; cabinetId: shell.cabinet.scoreKey }
@@ -141,6 +142,7 @@ ShellRoot {
       property bool enteringInitials: false
       property string initialsInput: ""
       property bool initialsPristine: true
+      property bool circuitRunRecorded: false
       readonly property bool viewportTooSmall: playfield.width < 600 || playfield.height < 300
 
       Component.onCompleted: {
@@ -207,6 +209,7 @@ ShellRoot {
         else if (event.key === Qt.Key_M) toggleSound()
         else if (event.key === Qt.Key_P) paused = !paused
         else if (event.key === Qt.Key_R) startFlight()
+        else if (shell.circuitMode && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && flightState !== "flying") window.visible = false
         else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && flightState === "landed") advanceStage()
         else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && flightState !== "flying") startFlight()
         else if (event.key === Qt.Key_Q || event.key === Qt.Key_Escape) window.visible = false
@@ -264,6 +267,7 @@ ShellRoot {
 
       function launchFromAttract() {
         shell.playEffect(startSound)
+        circuitRunRecorded = false
         startFlight()
       }
 
@@ -275,7 +279,9 @@ ShellRoot {
         var initials = shell.cleanInitials(initialsInput)
         if (initials) shell.saveDefaultInitials(initials)
         shell.recordLanding(score, fuel, elapsed, initials || "---", stage)
+        circuitRunRecorded = true
         enteringInitials = false
+        if (shell.circuitMode) { window.visible = false; return }
         showScores = true
       }
 
@@ -635,6 +641,11 @@ ShellRoot {
         thrustHeld = false
         spawnCrashParticles()
         shell.playEffect(crashSound)
+        if (shell.circuitMode && !attractMode && !circuitRunRecorded) {
+          score = 0
+          shell.recordLanding(0, fuel, elapsed, shell.defaultInitials || "---", stage)
+          circuitRunRecorded = true
+        }
       }
 
       function updatePhysics(dt) {
@@ -686,6 +697,7 @@ ShellRoot {
             enteringInitials = true
           } else {
             shell.recordLanding(score, fuel, elapsed, shell.defaultInitials || "---", stage)
+            circuitRunRecorded = true
           }
         }
       }
@@ -1168,7 +1180,7 @@ ShellRoot {
               }
               Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: game.paused ? "Press P to resume" : game.flightState === "landed" ? "SCORE " + game.score + "  ·  ENTER FOR STAGE " + (game.stage + 1) : "ENTER TO RETRY STAGE " + game.stage
+                text: game.paused ? "Press P to resume" : shell.circuitMode ? "SCORE " + game.score + "  ·  ENTER RETURN TO CIRCUIT" : game.flightState === "landed" ? "SCORE " + game.score + "  ·  ENTER FOR STAGE " + (game.stage + 1) : "ENTER TO RETRY STAGE " + game.stage
                 color: shell.foreground
                 font.pixelSize: 14
                 font.family: "monospace"

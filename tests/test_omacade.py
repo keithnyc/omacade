@@ -276,7 +276,7 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("function achievementUnlocked(id)", runtime)
         self.assertIn("row.newBest =", runtime)
         self.assertIn("data.lastRuns[cabinetId] = row", runtime)
-        for achievement in ("first-boot", "soft-landing", "root-access", "route-locked", "triple-threat", "core-shield", "full-stack"):
+        for achievement in ("first-boot", "soft-landing", "root-access", "route-locked", "triple-threat", "core-shield", "full-stack", "circuit-champion"):
             self.assertIn(f'id: "{achievement}"', runtime)
         self.assertIn("property color accent", theme)
         self.assertIn("CabinetRegistry.cabinets", lobby)
@@ -287,6 +287,14 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("visible: arcade.showRecap", lobby)
         self.assertIn('text: "SESSION COMPLETE"', lobby)
         self.assertIn("function runDetail(run, cabinetId)", lobby)
+        self.assertIn("function circuitPoints(run, cabinetId)", lobby)
+        self.assertIn("function beginCircuit()", lobby)
+        self.assertIn("function finishCircuit()", lobby)
+        self.assertIn('OMACADE_CIRCUIT=1', lobby)
+        self.assertIn('"O M A C A D E  //  C I R C U I T"', lobby)
+        self.assertIn('cabinetId = "circuit"', lobby)
+        self.assertIn('cabinetId === "lander" && raw <= 0', lobby)
+        self.assertIn('Number(data.successful_landings || 0) + 1', runtime)
         self.assertIn("arcade.beginPilotEdit()", lobby)
         self.assertIn('arcade) target="$root/game/arcade.qml"', launcher)
         self.assertIn('lander) target="$root/game/shell.qml"', launcher)
@@ -296,8 +304,11 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("Exec=omarchy-launch-or-focus Omacade omacade-gui", desktop)
         self.assertIn('CabinetRegistry.byId("lander")', lander)
         self.assertIn("ArcadeData { id: arcadeData", lander)
+        self.assertIn('Quickshell.env("OMACADE_CIRCUIT") === "1"', lander)
+        self.assertIn("circuitRunRecorded", lander)
 
         rootbound = (ROOT / "game" / "rootbound.qml").read_text(encoding="utf-8")
+        self.assertIn('Quickshell.env("OMACADE_CIRCUIT") === "1"', rootbound)
         self.assertIn('CabinetRegistry.byId("rootbound")', rootbound)
         self.assertIn("function movePlayer(dx, dy)", rootbound)
         self.assertIn("function moveEnemies()", rootbound)
@@ -340,6 +351,7 @@ class OmacadeTests(unittest.TestCase):
             self.assertEqual(wav[8:12], b"WAVE")
 
         packet_hop = (ROOT / "game" / "packet-hop.qml").read_text(encoding="utf-8")
+        self.assertIn('Quickshell.env("OMACADE_CIRCUIT") === "1"', packet_hop)
         self.assertIn('CabinetRegistry.byId("packet-hop")', packet_hop)
         self.assertIn("function tickWorld(dt)", packet_hop)
         self.assertIn("function bindPort(x)", packet_hop)
@@ -396,6 +408,7 @@ class OmacadeTests(unittest.TestCase):
             self.assertEqual(wav[8:12], b"WAVE")
 
         core_command = (ROOT / "game" / "core-command.qml").read_text(encoding="utf-8")
+        self.assertIn('Quickshell.env("OMACADE_CIRCUIT") === "1"', core_command)
         self.assertIn('CabinetRegistry.byId("core-command")', core_command)
         self.assertIn("function spawnThreat(", core_command)
         self.assertIn("function fireAt(x, y)", core_command)

@@ -6,7 +6,8 @@
 Cabinet 03, **Packet Hop**. Cabinet 04, **Core Command**, completes the v1 floor
 with quarantine-field defense and cascading threat interception. A shared
 arcade-floor lobby tracks one local pilot profile, cabinet records, session
-recaps, and achievements across all four.
+recaps, and achievements across all four. Its Omacade Circuit mode turns the
+entire floor into one four-contract run with normalized scoring and two retries.
 
 Lander is an original graphical game inspired by the broad lunar-landing genre.
 Rotate, manage a limited fuel supply, and settle both feet onto a marked pad.
@@ -53,6 +54,12 @@ around their approaches. Crashes retry the current stage.
 | R | Restart the current stage |
 | Q / Escape | Close the cabinet |
 | Enter | Advance after landing or retry after impact |
+
+From the arcade lobby, press `C` to start an Omacade Circuit. Circuit launches
+Lander, Rootbound, Packet Hop, and Core Command in order. Each cabinet contributes
+up to 3000 performance points based on its own objectives rather than raw score,
+and two continues can replay a pending contract before its result is locked.
+Completed Circuits receive a separate local Circuit record and achievement.
 
 A qualifying landing opens the classic three-character initials prompt. Once
 entered, those initials are prefilled for future high scores; typing a new
@@ -128,7 +135,9 @@ services live beside it. Each game runs as an isolated Quickshell process, so
 adding a cabinet does not enlarge the Omarchy bar widget or couple its game
 loop to Lander. The lobby presents all cabinets at once, supports direct pilot
 initial editing with `I`, and refreshes personal-best, stage, run-count,
-achievement, and last-session data whenever a cabinet closes. See
+achievement, and last-session data whenever a cabinet closes. Circuit mode uses
+those same timestamped run records as a process-safe completion handshake and
+never couples the four game loops together. See
 `game/framework/README.md` for the cabinet contract.
 
 Validate the repository with Omarchy's own validator:

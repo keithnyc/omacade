@@ -8,6 +8,7 @@ ShellRoot {
   id: shell
 
   readonly property var cabinet: CabinetRegistry.byId("core-command")
+  readonly property bool circuitMode: Quickshell.env("OMACADE_CIRCUIT") === "1"
   ArcadeTheme { id: theme }
   ArcadeData { id: arcadeData; cabinetId: shell.cabinet.scoreKey }
 
@@ -474,6 +475,7 @@ ShellRoot {
         var initials = arcadeData.cleanInitials(initialsInput)
         if (initials) arcadeData.patchConfig({ initials: initials })
         recordRun(initials || "---")
+        if (shell.circuitMode) { window.visible = false; return }
         modeBeforeScores = "gameover"
         mode = "scores"
       }
@@ -560,6 +562,7 @@ ShellRoot {
         }
         if (mode === "attract" || mode === "gameover") {
           if (event.key === Qt.Key_H) openScores()
+          else if (shell.circuitMode && mode === "gameover" && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)) window.visible = false
           else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) startRun()
           else if (event.key === Qt.Key_Q || event.key === Qt.Key_Escape) window.visible = false
           event.accepted = true
@@ -961,7 +964,7 @@ ShellRoot {
               anchors.centerIn: parent
               spacing: 11
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: game.mode === "paused" ? "DEFENSE GRID PAUSED" : game.mode === "waveintro" ? game.zoneName + " // WAVE " + game.wave : game.mode === "waveclear" ? "WAVE SECURED" : "CORE SERVICES LOST"; color: game.mode === "gameover" ? theme.red : game.mode === "waveclear" ? theme.green : theme.accent; font.pixelSize: 25; font.bold: true; font.letterSpacing: 1.5 }
-              Text { anchors.horizontalCenter: parent.horizontalCenter; text: game.mode === "gameover" ? "SCORE " + game.score + "  ·  ENTER TO REARM" : game.mode === "paused" ? "P TO RESUME" : game.statusMessage; color: theme.foreground; font.pixelSize: 12; font.family: "monospace"; font.bold: true }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: game.mode === "gameover" ? "SCORE " + game.score + (shell.circuitMode ? "  ·  ENTER RETURN TO CIRCUIT" : "  ·  ENTER TO REARM") : game.mode === "paused" ? "P TO RESUME" : game.statusMessage; color: theme.foreground; font.pixelSize: 12; font.family: "monospace"; font.bold: true }
               Text { visible: game.mode === "waveintro"; anchors.horizontalCenter: parent.horizontalCenter; text: game.wave % 5 === 0 ? "ZERO-DAY SIEGE // THREE QUARANTINE HITS REQUIRED" : game.wave === 1 ? "EXPLOITS INBOUND" : game.wave === 2 ? "FORK BOMBS DETECTED" : game.wave === 3 ? "STEALTH PAYLOADS DETECTED" : "ROOTKIT TRAJECTORIES DETECTED"; color: game.wave % 5 === 0 ? theme.red : theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
             }
           }

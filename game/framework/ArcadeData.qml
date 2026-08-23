@@ -29,7 +29,8 @@ Item {
     { id: "route-locked", title: "ROUTE LOCKED", detail: "Bind five ports in one Packet Hop run." },
     { id: "triple-threat", title: "TRIPLE THREAT", detail: "Record a run on the first three cabinets." },
     { id: "core-shield", title: "CORE SHIELD", detail: "Clear a wave with all six services online." },
-    { id: "full-stack", title: "FULL STACK", detail: "Record a run on all four cabinets." }
+    { id: "full-stack", title: "FULL STACK", detail: "Record a run on all four cabinets." },
+    { id: "circuit-champion", title: "CIRCUIT CHAMPION", detail: "Complete an Omacade Circuit." }
   ]
 
   function cleanInitials(value) {
@@ -144,6 +145,8 @@ Item {
         && completedCount(data, "packet-hop") > 0 && completedCount(data, "core-command") > 0
         && !earned["full-stack"])
       earned["full-stack"] = historical
+    if (completedCount(data, "circuit") > 0 && !earned["circuit-champion"])
+      earned["circuit-champion"] = historical
     return earned
   }
 
@@ -170,6 +173,7 @@ Item {
                           && completedCount(data, "rootbound") > 0
                           && completedCount(data, "packet-hop") > 0
                           && completedCount(data, "core-command") > 0)
+    unlock("circuit-champion", cabinetId === "circuit")
     data.achievements = earned
     return unlocked
   }
@@ -217,7 +221,8 @@ Item {
     if (!data.stats || typeof data.stats !== "object") data.stats = {}
     var previous = data.stats[cabinetId] ? Number(data.stats[cabinetId].completed || 0) : completedRuns
     data.stats[cabinetId] = { completed: previous + 1, lastPlayed: row.at }
-    if (cabinetId === "lander") data.successful_landings = previous + 1
+    if (cabinetId === "lander" && Number(row.score || 0) > 0)
+      data.successful_landings = Number(data.successful_landings || 0) + 1
     row.unlocks = evaluateAchievements(data, row)
     if (!data.lastRuns || typeof data.lastRuns !== "object") data.lastRuns = {}
     data.lastRuns[cabinetId] = row

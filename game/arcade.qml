@@ -17,6 +17,16 @@ ShellRoot {
   property string pilotInput: ""
   property bool pilotPristine: true
   property string launchRunAt: ""
+  property bool circuitActive: false
+  property bool circuitBriefing: false
+  property string circuitPhase: ""
+  property int circuitIndex: 0
+  property int circuitScore: 0
+  property int circuitAward: 0
+  property int circuitContinues: 2
+  property var circuitResults: []
+  property var circuitRun: ({})
+  property var circuitFinalRun: ({})
   property var stars: []
   property real starTime: 0
 
@@ -49,13 +59,22 @@ ShellRoot {
   }
 
   function launchSelected() {
-    if (!cabinets.length || cabinetProcess.running) return
-    var cabinet = cabinets[selectedIndex]
+    launchCabinet(selectedIndex)
+  }
+
+  function launchCabinet(index) {
+    if (!cabinets.length || cabinetProcess.running || index < 0 || index >= cabinets.length) return
+    selectedIndex = index
+    arcadeData.cabinetId = cabinets[index].scoreKey
+    arcadeData.applyScores(JSON.stringify(arcadeData.scoreData || {}))
+    var cabinet = cabinets[index]
     if (cabinet.status !== "ready") return
     var previousRun = arcadeData.lastRunFor(cabinet.scoreKey)
     launchRunAt = previousRun && previousRun.at ? String(previousRun.at) : ""
     play(launchSound)
-    cabinetProcess.command = ["qs", "-n", "-p", gameDir + "/" + cabinet.entry]
+    cabinetProcess.command = circuitActive
+      ? ["env", "OMACADE_CIRCUIT=1", "qs", "-n", "-p", gameDir + "/" + cabinet.entry]
+      : ["qs", "-n", "-p", gameDir + "/" + cabinet.entry]
     cabinetProcess.running = true
     lobby.visible = false
   }
@@ -83,6 +102,105 @@ ShellRoot {
     if (cabinetId === "rootbound") return "PACKAGES " + Number(run.packages || 0) + "  //  DEPTH " + Math.max(1, Number(run.stage || 1))
     if (cabinetId === "core-command") return "PERFECT WAVES " + Number(run.perfectWaves || 0) + "  //  CHAIN x" + Math.max(1, Number(run.maxChain || 1))
     return "PORTS " + Number(run.ports || 0) + "  //  TTL " + Math.ceil(Number(run.ttl || 0))
+  }
+
+  function circuitPoints(run, cabinetId) {
+    if (!run || run.score === undefined) return 0
+    var raw = Math.max(0, Number(run.score || 0))
+    if (cabinetId === "lander" && raw <= 0) return 0
+    var points = 0
+    if (cabinetId === "lander")
+      points = raw * 0.45 + Number(run.fuel || 0) * 10 + Math.max(1, Number(run.stage || 1)) * 140
+    else if (cabinetId === "rootbound")
+      points = raw * 0.10 + Math.max(1, Number(run.stage || 1)) * 420 + Number(run.packages || 0) * 80
+    else if (cabinetId === "packet-hop")
+      points = raw * 0.10 + Math.max(1, Number(run.stage || 1)) * 220 + Number(run.ports || 0) * 330 + Number(run.ttl || 0) * 6
+    else
+      points = raw * 0.055 + Math.max(1, Number(run.stage || 1)) * 250 + Number(run.services || 0) * 170
+             + Number(run.perfectWaves || 0) * 260 + Number(run.maxChain || 0) * 55
+    return Math.max(0, Math.min(3000, Math.round(points)))
+  }
+
+  function beginCircuit() {
+    if (cabinetProcess.running) return
+    circuitActive = true
+    circuitBriefing = true
+    circuitPhase = "intro"
+    circuitIndex = 0
+    circuitScore = 0
+    circuitAward = 0
+    circuitContinues = 2
+    circuitResults = []
+    circuitRun = ({})
+    circuitFinalRun = ({})
+    selectIndex(0)
+    play(launchSound)
+  }
+
+  function launchCircuitCabinet() {
+    circuitBriefing = false
+    circuitRun = ({})
+    circuitAward = 0
+    launchCabinet(circuitIndex)
+  }
+
+  function acceptCircuitBriefing() {
+    if (circuitPhase === "intro" || circuitPhase === "deploy") {
+      launchCircuitCabinet()
+      return
+    }
+    if (circuitPhase === "result") {
+      var cabinet = cabinets[circuitIndex]
+      var committed = circuitResults.slice(0)
+      committed.push({ id: cabinet.id, title: cabinet.shortTitle, points: circuitAward,
+                       score: Number(circuitRun.score || 0), stage: Number(circuitRun.stage || 1) })
+      circuitResults = committed
+      circuitScore += circuitAward
+      if (circuitIndex >= cabinets.length - 1) {
+        finishCircuit()
+      } else {
+        circuitIndex += 1
+        selectedIndex = circuitIndex
+        arcadeData.cabinetId = cabinets[selectedIndex].scoreKey
+        arcadeData.applyScores(JSON.stringify(arcadeData.scoreData || {}))
+        circuitPhase = "deploy"
+        play(moveSound)
+      }
+      return
+    }
+    if (circuitPhase === "complete") {
+      circuitBriefing = false
+      circuitActive = false
+    }
+  }
+
+  function retryCircuitCabinet() {
+    if (circuitPhase !== "result" || circuitContinues <= 0) return
+    circuitContinues -= 1
+    launchCircuitCabinet()
+  }
+
+  function abortCircuit() {
+    circuitActive = false
+    circuitBriefing = false
+    circuitPhase = ""
+    arcadeData.cabinetId = cabinets[selectedIndex].scoreKey
+    arcadeData.applyScores(JSON.stringify(arcadeData.scoreData || {}))
+  }
+
+  function finishCircuit() {
+    var finalScore = circuitScore
+    var oldCabinet = arcadeData.cabinetId
+    arcadeData.cabinetId = "circuit"
+    arcadeData.applyScores(JSON.stringify(arcadeData.scoreData || {}))
+    arcadeData.recordScore({ score: finalScore, initials: arcadeData.defaultInitials || "---",
+                             difficulty: "full-stack", stage: cabinets.length,
+                             continues: circuitContinues, splits: circuitResults })
+    circuitFinalRun = arcadeData.lastRunFor("circuit")
+    arcadeData.cabinetId = oldCabinet
+    arcadeData.applyScores(JSON.stringify(arcadeData.scoreData || {}))
+    circuitPhase = "complete"
+    play(launchSound)
   }
 
   Component.onCompleted: {
@@ -113,8 +231,20 @@ ShellRoot {
     repeat: false
     onTriggered: {
       arcadeData.applyScores(JSON.stringify(arcadeData.scoreData || {}))
-      arcade.showRecap = arcadeData.lastRun && arcadeData.lastRun.score !== undefined
-                        && String(arcadeData.lastRun.at || "") !== arcade.launchRunAt
+      var hasNewRun = arcadeData.lastRun && arcadeData.lastRun.score !== undefined
+                      && String(arcadeData.lastRun.at || "") !== arcade.launchRunAt
+      if (arcade.circuitActive) {
+        arcade.circuitBriefing = true
+        if (hasNewRun) {
+          arcade.circuitRun = arcadeData.lastRun
+          arcade.circuitAward = arcade.circuitPoints(arcade.circuitRun, arcade.cabinets[arcade.circuitIndex].id)
+          arcade.circuitPhase = "result"
+        } else {
+          arcade.circuitPhase = "aborted"
+        }
+      } else {
+        arcade.showRecap = hasNewRun
+      }
     }
   }
 
@@ -163,6 +293,22 @@ ShellRoot {
           event.accepted = true
           return
         }
+        if (arcade.circuitBriefing) {
+          if (arcade.circuitPhase === "aborted") {
+            if (event.key === Qt.Key_R || event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
+              arcade.launchCircuitCabinet()
+            else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Q)
+              arcade.abortCircuit()
+          } else if (arcade.circuitPhase === "result" && event.key === Qt.Key_R) {
+            arcade.retryCircuitCabinet()
+          } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+            arcade.acceptCircuitBriefing()
+          } else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Q) {
+            arcade.abortCircuit()
+          }
+          event.accepted = true
+          return
+        }
         if (arcade.showRecap) {
           if (event.key === Qt.Key_Escape || event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)
             arcade.showRecap = false
@@ -180,6 +326,7 @@ ShellRoot {
         else if (event.key === Qt.Key_H) arcade.showScores = true
         else if (event.key === Qt.Key_I) arcade.beginPilotEdit()
         else if (event.key === Qt.Key_M) arcade.toggleSound()
+        else if (event.key === Qt.Key_C) arcade.beginCircuit()
         else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) arcade.launchSelected()
         else if (event.key === Qt.Key_Q || event.key === Qt.Key_Escape) Qt.quit()
         event.accepted = true
@@ -402,11 +549,131 @@ ShellRoot {
 
           Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: "← → SELECT    ENTER PLAY    H RECORDS    I PILOT    M SOUND    Q QUIT"
+            text: "← → SELECT    ENTER PLAY    C CIRCUIT    H RECORDS    I PILOT    M SOUND    Q QUIT"
             color: theme.muted
             font.pixelSize: 12
             font.family: "monospace"
             font.bold: true
+          }
+        }
+
+        Rectangle {
+          property var circuitCabinet: arcade.cabinets[Math.max(0, Math.min(arcade.cabinets.length - 1, arcade.circuitIndex))]
+          visible: arcade.circuitBriefing
+          anchors.centerIn: parent
+          width: Math.min(parent.width - 60, 720)
+          height: Math.min(parent.height - 44, arcade.circuitPhase === "complete" ? 450
+                           : arcade.circuitPhase === "result" ? 440 : 380)
+          radius: 14
+          color: theme.surface
+          border.color: arcade.circuitPhase === "complete" ? theme.yellow
+                        : arcade.circuitPhase === "aborted" ? theme.red : theme.accent
+          border.width: 3
+          z: 32
+
+          Column {
+            anchors.fill: parent
+            anchors.margins: 30
+            spacing: 12
+            Text {
+              anchors.horizontalCenter: parent.horizontalCenter
+              text: arcade.circuitPhase === "complete" ? "FULL STACK CLEARED"
+                    : arcade.circuitPhase === "aborted" ? "CABINET SIGNAL LOST"
+                    : "O M A C A D E  //  C I R C U I T"
+              color: arcade.circuitPhase === "complete" ? theme.yellow
+                     : arcade.circuitPhase === "aborted" ? theme.red : theme.accent
+              font.pixelSize: 16; font.family: "monospace"; font.bold: true; font.letterSpacing: 2
+            }
+            Row {
+              anchors.horizontalCenter: parent.horizontalCenter
+              spacing: 10
+              Repeater {
+                model: arcade.cabinets
+                delegate: Rectangle {
+                  required property int index
+                  required property var modelData
+                  width: 132; height: 50; radius: 6
+                  color: index < arcade.circuitIndex || arcade.circuitPhase === "complete" ? theme.surfaceRaised : theme.background
+                  border.color: index < arcade.circuitIndex || arcade.circuitPhase === "complete" ? theme.green
+                                : index === arcade.circuitIndex ? theme.accent : theme.muted
+                  border.width: index === arcade.circuitIndex && arcade.circuitPhase !== "complete" ? 2 : 1
+                  Column {
+                    anchors.centerIn: parent
+                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: "0" + (index + 1) + " " + modelData.shortTitle; color: index <= arcade.circuitIndex ? theme.foreground : theme.muted; font.pixelSize: 11; font.family: "monospace"; font.bold: true }
+                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: index < arcade.circuitIndex || arcade.circuitPhase === "complete" ? "CLEARED" : index === arcade.circuitIndex ? "ACTIVE" : "LOCKED"; color: index < arcade.circuitIndex || arcade.circuitPhase === "complete" ? theme.green : index === arcade.circuitIndex ? theme.accent : theme.muted; font.pixelSize: 9; font.family: "monospace"; font.bold: true }
+                  }
+                }
+              }
+            }
+            Rectangle { width: parent.width; height: 1; color: theme.muted; opacity: 0.7 }
+            Text {
+              anchors.horizontalCenter: parent.horizontalCenter
+              text: arcade.circuitPhase === "intro" ? "FOUR CABINETS. ONE PILOT. ONE FULL-STACK SCORE."
+                    : arcade.circuitPhase === "complete" ? "CIRCUIT SCORE  " + arcade.circuitScore
+                    : arcade.circuitPhase === "aborted" ? "NO RUN RECORD RECEIVED FROM " + parent.parent.circuitCabinet.shortTitle
+                    : arcade.circuitPhase === "result" ? parent.parent.circuitCabinet.shortTitle + " // CONTRACT COMPLETE"
+                    : "CONTRACT " + (arcade.circuitIndex + 1) + " // " + parent.parent.circuitCabinet.shortTitle
+              color: arcade.circuitPhase === "complete" ? theme.yellow : theme.foreground
+              font.pixelSize: arcade.circuitPhase === "complete" ? 30 : 22
+              font.family: "monospace"; font.bold: true
+            }
+            Text {
+              visible: arcade.circuitPhase === "intro" || arcade.circuitPhase === "deploy"
+              width: parent.width
+              horizontalAlignment: Text.AlignHCenter
+              wrapMode: Text.WordWrap
+              text: arcade.circuitPhase === "intro"
+                    ? "Each cabinet awards up to 3000 normalized points. Two continues let you replay a completed contract before its result is locked."
+                    : parent.parent.circuitCabinet.tagline.toUpperCase() + "\n" + parent.parent.circuitCabinet.description
+              color: theme.foreground; font.pixelSize: 13; font.family: "monospace"; lineHeight: 1.35
+            }
+            Text {
+              visible: arcade.circuitPhase === "intro"
+              anchors.horizontalCenter: parent.horizontalCenter
+              text: "BEST CIRCUIT  " + arcadeData.bestFor("circuit") + "  ·  PILOT " + (arcadeData.defaultInitials || "---")
+              color: theme.yellow; font.pixelSize: 12; font.family: "monospace"; font.bold: true
+            }
+            Column {
+              visible: arcade.circuitPhase === "result"
+              anchors.horizontalCenter: parent.horizontalCenter
+              spacing: 8
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: Math.round(Number(arcade.circuitRun.score || 0)) + " CABINET SCORE"; color: theme.muted; font.pixelSize: 13; font.family: "monospace"; font.bold: true }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "+" + arcade.circuitAward + " CIRCUIT POINTS"; color: theme.yellow; font.pixelSize: 30; font.family: "monospace"; font.bold: true }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: arcade.runDetail(arcade.circuitRun, parent.parent.parent.circuitCabinet.id); color: theme.foreground; font.pixelSize: 11; font.family: "monospace"; font.bold: true }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "PROJECTED TOTAL  " + (arcade.circuitScore + arcade.circuitAward); color: theme.green; font.pixelSize: 14; font.family: "monospace"; font.bold: true }
+            }
+            Column {
+              visible: arcade.circuitPhase === "complete"
+              width: parent.width
+              spacing: 5
+              Repeater {
+                model: arcade.circuitResults
+                delegate: Row {
+                  required property var modelData
+                  width: parent.width; height: 24
+                  Text { width: parent.width * 0.48; text: modelData.title; color: theme.foreground; font.pixelSize: 11; font.family: "monospace"; font.bold: true }
+                  Text { width: parent.width * 0.26; text: "RAW " + Math.round(Number(modelData.score || 0)); color: theme.muted; font.pixelSize: 10; font.family: "monospace" }
+                  Text { width: parent.width * 0.26; horizontalAlignment: Text.AlignRight; text: "+" + modelData.points; color: theme.yellow; font.pixelSize: 11; font.family: "monospace"; font.bold: true }
+                }
+              }
+            }
+            Text {
+              property var circuitUnlocks: arcade.circuitFinalRun && Array.isArray(arcade.circuitFinalRun.unlocks) ? arcade.circuitFinalRun.unlocks : []
+              visible: arcade.circuitPhase === "complete" && circuitUnlocks.length > 0
+              anchors.horizontalCenter: parent.horizontalCenter
+              text: "ACHIEVEMENT UNLOCKED // CIRCUIT CHAMPION"
+              color: theme.green; font.pixelSize: 11; font.family: "monospace"; font.bold: true
+            }
+            Item { width: 1; height: 2 }
+            Text {
+              anchors.horizontalCenter: parent.horizontalCenter
+              text: arcade.circuitPhase === "aborted" ? "R / ENTER RELAUNCH  ·  ESC ABORT CIRCUIT"
+                    : arcade.circuitPhase === "result" ? (arcade.circuitContinues > 0 ? "ENTER LOCK RESULT  ·  R RETRY (" + arcade.circuitContinues + " CONTINUES)" : "ENTER LOCK RESULT  ·  NO CONTINUES")
+                    : arcade.circuitPhase === "complete" ? "ENTER RETURN TO ARCADE"
+                    : arcade.circuitPhase === "intro" ? "ENTER BEGIN CIRCUIT  ·  ESC CANCEL"
+                    : "ENTER DEPLOY  ·  ESC ABORT CIRCUIT"
+              color: theme.accent; font.pixelSize: 12; font.family: "monospace"; font.bold: true
+            }
           }
         }
 
