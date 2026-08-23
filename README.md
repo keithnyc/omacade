@@ -175,10 +175,13 @@ Stage-gated network events now add labeled cache hits, packet-loss windows,
 burst-traffic surges, and single-lane route flaps. A dedicated HUD signal module,
 countdown warnings, affected-lane callouts, and active-state graphics explain
 each event without asking the player to memorize it. Near-miss bonuses, courier
-trails, and SYN/ACK port-binding bursts reinforce the route behaviors. Next work
-is Cabinet 04, Core Command: six critical services, three limited firewall
-batteries, expanding quarantine fields, chain reactions, wave bonuses, and
-progressively nastier exploits, fork bombs, stealth payloads, and rootkits.
+trails, and SYN/ACK port-binding bursts reinforce the route behaviors. Cabinet
+04, Core Command, now defends six capability-bearing services with three limited
+firewall batteries, expanding quarantine fields, chain reactions, conserved-rule
+bonuses, and progressively nastier exploits, fork bombs, stealth payloads, and
+rootkits. Service outages disable distinct stack boosts while SYNC recovery and
+a single BOOT rollback keep damaged runs recoverable. Every fifth wave introduces
+a rotating three-layer zero-day siege payload alongside the normal threat stream.
 
 ## License
 

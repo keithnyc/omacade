@@ -41,6 +41,7 @@ ShellRoot {
       readonly property real worldHeight: 600
       readonly property real groundY: 545
       readonly property var serviceNames: ["SHELL", "NET", "HOME", "PKG", "SYNC", "BOOT"]
+      readonly property var serviceCapabilities: ["AIM+", "BUS+", "SCORE+", "RULES+", "REPAIR+", "ROLLBACK"]
       readonly property string zoneName: wave <= 2 ? "/EDGE" : wave <= 4 ? "/WAN" : wave <= 6 ? "/DMZ" : "/CORE"
       readonly property bool tooSmall: playfield.width < 620 || playfield.height < 430
 
@@ -64,6 +65,7 @@ ShellRoot {
       property real impactFlash: 0
       property real chainLife: 0
       property real launchBusCooldown: 0
+      property bool bootRecoveryAvailable: true
       property string chainText: ""
       property string statusMessage: "DEFENSE GRID READY"
       property bool leftHeld: false
@@ -115,6 +117,11 @@ ShellRoot {
         ]
       }
 
+      function serviceOnline(name) {
+        for (var i = 0; i < services.length; i++) if (services[i].name === name) return services[i].alive
+        return false
+      }
+
       function startRun() {
         wave = 1
         score = 0
@@ -123,6 +130,7 @@ ShellRoot {
         maxChain = 0
         currentChain = 0
         perfectWaves = 0
+        bootRecoveryAvailable = true
         services = freshServices()
         selectedBattery = -1
         prepareWave()
@@ -143,7 +151,7 @@ ShellRoot {
         leftHeld = rightHeld = upHeld = downHeld = false
         firewallCooldowns = [0, 0, 0]
         launchBusCooldown = 0
-        var ammoBase = Math.max(7, 11 - Math.floor((wave - 1) / 3))
+        var ammoBase = Math.max(7, 11 - Math.floor((wave - 1) / 3)) + (serviceOnline("PKG") ? 1 : 0)
         batteries = [
           { x: 48, alive: true, ammo: ammoBase },
           { x: 500, alive: true, ammo: ammoBase + 2 },
@@ -155,17 +163,21 @@ ShellRoot {
 
       function advanceWave() {
         wave += 1
-        if (wave % 3 === 0 && onlineServices < services.length) {
+        var repairedName = ""
+        var repairInterval = serviceOnline("SYNC") ? 3 : 4
+        if (wave % repairInterval === 0 && onlineServices < services.length) {
           var repaired = services.slice(0)
           for (var i = 0; i < repaired.length; i++) {
             if (!repaired[i].alive) {
               repaired[i] = { x: repaired[i].x, alive: true, name: repaired[i].name }
+              repairedName = repaired[i].name
               break
             }
           }
           services = repaired
         }
         prepareWave()
+        if (repairedName) statusMessage = "SYNC RESTORE // " + repairedName + " ONLINE"
         mode = "waveintro"
         transitionLife = 1.15
         shell.play(waveSound)
@@ -196,10 +208,12 @@ ShellRoot {
         var speed = 42 + Math.min(wave, 9) * 5
         if (type === "rootkit") speed *= 1.42
         else if (type === "stealth") speed *= 1.08
+        else if (type === "zeroDay") speed *= 0.52
         var updated = threats.slice(0)
         updated.push({ sx: sx, sy: sy, x: sx, y: sy, tx: target.x, ty: target.y,
                        targetKind: target.kind, targetIndex: target.index, type: type,
-                       speed: speed, split: false })
+                       speed: speed, split: false, hp: type === "zeroDay" ? 3 : 1,
+                       hitCooldown: 0 })
         threats = updated
       }
 
@@ -254,9 +268,9 @@ ShellRoot {
                                    batteryIndex: batteryIndex })
         interceptors = updatedInterceptors
         var updatedCooldowns = firewallCooldowns.slice(0)
-        updatedCooldowns[batteryIndex] = 0.24
+        updatedCooldowns[batteryIndex] = serviceOnline("NET") ? 0.24 : 0.34
         firewallCooldowns = updatedCooldowns
-        launchBusCooldown = 0.14
+        launchBusCooldown = serviceOnline("NET") ? 0.14 : 0.20
         shotsFired += 1
         statusMessage = "QUARANTINE LAUNCHED // FW-" + (batteryIndex + 1)
         shell.play(launchSound)
@@ -278,6 +292,14 @@ ShellRoot {
         if (threat.targetKind === "service") {
           var updatedServices = services.slice(0)
           var service = updatedServices[threat.targetIndex]
+          if (service && service.alive && service.name !== "BOOT" && serviceOnline("BOOT") && bootRecoveryAvailable) {
+            bootRecoveryAvailable = false
+            statusMessage = "BOOT ROLLBACK // " + service.name + " IMPACT REVERSED"
+            impactFlash = 0.18
+            addExplosion(threat.tx, threat.ty, 42, "rollback", 1)
+            shell.play(waveSound)
+            return
+          }
           if (service && service.alive) updatedServices[threat.targetIndex] = { x: service.x, alive: false, name: service.name }
           services = updatedServices
           statusMessage = service ? service.name + " OFFLINE // PAYLOAD IMPACT" : "SERVICE OFFLINE"
@@ -301,7 +323,8 @@ ShellRoot {
           var index = serviceChoices[(Math.floor(Math.random() * serviceChoices.length) + child) % serviceChoices.length]
           children.push({ sx: threat.x, sy: threat.y, x: threat.x, y: threat.y,
                           tx: services[index].x, ty: groundY - 12, targetKind: "service", targetIndex: index,
-                          type: "exploit", speed: threat.speed * 1.12, split: true })
+                          type: "exploit", speed: threat.speed * 1.12, split: true,
+                          hp: 1, hitCooldown: 0 })
         }
         statusMessage = "FORK BOMB // PAYLOAD SPLIT"
       }
@@ -345,29 +368,42 @@ ShellRoot {
         for (var i = 0; i < threats.length; i++) {
           var threat = threats[i]
           var interceptedBy = null
-          for (var e = 0; e < explosions.length; e++) {
-            var blast = explosions[e]
-            if (blast.kind === "impact") continue
-            var radius = explosionRadius(blast)
-            var bx = threat.x - blast.x
-            var by = threat.y - blast.y
-            if (bx * bx + by * by <= radius * radius) { interceptedBy = blast; break }
+          if ((threat.hitCooldown || 0) <= 0) {
+            for (var e = 0; e < explosions.length; e++) {
+              var blast = explosions[e]
+              if (blast.kind === "impact" || blast.kind === "rollback") continue
+              var radius = explosionRadius(blast)
+              var bx = threat.x - blast.x
+              var by = threat.y - blast.y
+              if (bx * bx + by * by <= radius * radius) { interceptedBy = blast; break }
+            }
           }
           if (interceptedBy) {
             var chain = Math.max(game.chainLife > 0 ? game.currentChain + 1 : 1,
                                  Math.max(1, interceptedBy.combo))
             currentChain = chain
-            var base = threat.type === "rootkit" ? 260 : threat.type === "fork" ? 180 : threat.type === "stealth" ? 210 : 120
+            var base = threat.type === "zeroDay" ? 420 : threat.type === "rootkit" ? 260 : threat.type === "fork" ? 180 : threat.type === "stealth" ? 210 : 120
             score += base * chain
-            threatsDestroyed += 1
             maxChain = Math.max(maxChain, chain)
-            chainText = chain > 1 ? "CHAIN x" + chain + " // +" + (base * chain) : "THREAT QUARANTINED // +" + base
             chainLife = 0.8
             chainBlasts.push({ x: threat.x, y: threat.y, combo: Math.min(9, chain + 1) })
+            if (threat.type === "zeroDay" && threat.hp > 1) {
+              chainText = "ZERO-DAY LAYER BREACHED // " + (threat.hp - 1) + " REMAIN"
+              active.push({ sx: threat.x, sy: threat.y, x: threat.x, y: threat.y,
+                            tx: threat.tx, ty: threat.ty, targetKind: threat.targetKind,
+                            targetIndex: threat.targetIndex, type: threat.type,
+                            speed: threat.speed, split: threat.split, hp: threat.hp - 1,
+                            hitCooldown: 1.35 })
+              statusMessage = "ZERO-DAY MUTATING // REACQUIRE TARGET"
+            } else {
+              threatsDestroyed += 1
+              chainText = chain > 1 ? "CHAIN x" + chain + " // +" + (base * chain) : "THREAT QUARANTINED // +" + base
+            }
             continue
           }
 
           var step = threat.speed * dt
+          var nextHitCooldown = Math.max(0, (threat.hitCooldown || 0) - dt)
           if (threat.type === "fork" && !threat.split) {
             var forkY = threat.y + step
             if (forkY >= 205) {
@@ -377,7 +413,8 @@ ShellRoot {
                             x: threat.x, y: forkY,
                             tx: threat.tx, ty: threat.ty, targetKind: threat.targetKind,
                             targetIndex: threat.targetIndex, type: threat.type,
-                            speed: threat.speed, split: threat.split })
+                            speed: threat.speed, split: threat.split, hp: threat.hp,
+                            hitCooldown: nextHitCooldown })
             }
             continue
           }
@@ -392,7 +429,8 @@ ShellRoot {
                         x: threat.x + dx / distance * step, y: threat.y + dy / distance * step,
                         tx: threat.tx, ty: threat.ty, targetKind: threat.targetKind,
                         targetIndex: threat.targetIndex, type: threat.type,
-                        speed: threat.speed, split: threat.split })
+                        speed: threat.speed, split: threat.split, hp: threat.hp,
+                        hitCooldown: nextHitCooldown })
         }
         for (var c = 0; c < children.length; c++) active.push(children[c])
         threats = active
@@ -401,7 +439,8 @@ ShellRoot {
 
       function beginWaveClear() {
         if (mode !== "playing") return
-        var serviceBonus = onlineServices * 350
+        var homeBonus = serviceOnline("HOME") ? 700 : 0
+        var serviceBonus = onlineServices * 350 + homeBonus
         var ammoBonus = totalAmmo * 55
         if (onlineServices === services.length) perfectWaves += 1
         score += serviceBonus + ammoBonus
@@ -456,7 +495,7 @@ ShellRoot {
         firewallCooldowns = cooled
         launchBusCooldown = Math.max(0, launchBusCooldown - dt)
 
-        var reticleSpeed = 285 * dt
+        var reticleSpeed = (serviceOnline("SHELL") ? 285 : 220) * dt
         if (leftHeld) crosshairX -= reticleSpeed
         if (rightHeld) crosshairX += reticleSpeed
         if (upHeld) crosshairY -= reticleSpeed
@@ -467,10 +506,14 @@ ShellRoot {
         spawnCooldown -= dt
         if (spawnedThreats < waveThreats && spawnCooldown <= 0) {
           var salvoOrigin = 55 + Math.random() * 890
+          var zeroDaySiege = wave % 5 === 0 && spawnedThreats === 0
           var salvo = spawnedThreats >= 2 && spawnedThreats + 1 < waveThreats && spawnedThreats % 4 === 2
-          spawnThreat(undefined, salvoOrigin, -18)
+          spawnThreat(zeroDaySiege ? "zeroDay" : undefined, zeroDaySiege ? 500 : salvoOrigin, -18)
           spawnedThreats += 1
-          if (salvo) {
+          if (zeroDaySiege) {
+            spawnCooldown = 1.1
+            statusMessage = "ZERO-DAY SIEGE // THREE LAYERS DETECTED"
+          } else if (salvo) {
             spawnThreat("exploit", Math.max(30, Math.min(970, salvoOrigin + (Math.random() < 0.5 ? -34 : 34))), -34)
             spawnedThreats += 1
             spawnCooldown = 0.32
@@ -659,14 +702,39 @@ ShellRoot {
 
               for (var t = 0; t < game.threats.length; t++) {
                 var threat = game.threats[t]
-                var threatColor = threat.type === "fork" ? theme.orange : threat.type === "stealth" ? theme.accent : threat.type === "rootkit" ? theme.red : theme.yellow
+                var threatColor = threat.type === "zeroDay" ? theme.red : threat.type === "fork" ? theme.orange : threat.type === "stealth" ? theme.accent : threat.type === "rootkit" ? theme.red : theme.yellow
                 var threatAlpha = threat.type === "stealth" ? 0.22 + 0.7 * Math.abs(Math.sin(game.animationTime * 2.6 + t)) : 0.92
                 context.globalAlpha = threatAlpha * 0.55
                 context.strokeStyle = threatColor
-                context.lineWidth = threat.type === "rootkit" ? 3 : 2
+                context.lineWidth = threat.type === "zeroDay" ? 4 : threat.type === "rootkit" ? 3 : 2
                 context.beginPath(); context.moveTo(threat.sx, threat.sy); context.lineTo(threat.x, threat.y); context.stroke()
                 context.globalAlpha = threatAlpha
-                if (threat.type === "fork") {
+                if (threat.type === "zeroDay") {
+                  context.save()
+                  context.translate(threat.x, threat.y)
+                  context.rotate(game.animationTime * 0.7)
+                  context.fillStyle = theme.surface
+                  context.strokeStyle = theme.red
+                  context.lineWidth = 4
+                  context.beginPath()
+                  for (var edge = 0; edge < 6; edge++) {
+                    var edgeAngle = Math.PI / 3 * edge
+                    var edgeX = Math.cos(edgeAngle) * 17
+                    var edgeY = Math.sin(edgeAngle) * 17
+                    if (edge === 0) context.moveTo(edgeX, edgeY); else context.lineTo(edgeX, edgeY)
+                  }
+                  context.closePath(); context.fill(); context.stroke()
+                  context.rotate(-game.animationTime * 1.4)
+                  context.strokeStyle = theme.orange; context.lineWidth = 2
+                  context.beginPath(); context.arc(0, 0, 8, 0, Math.PI * 2); context.stroke()
+                  context.restore()
+                  for (var layer = 0; layer < 3; layer++) {
+                    context.fillStyle = layer < threat.hp ? theme.red : theme.muted
+                    context.globalAlpha = layer < threat.hp ? 1 : 0.24
+                    context.fillRect(threat.x - 11 + layer * 9, threat.y + 24, 5, 3)
+                  }
+                  context.globalAlpha = threatAlpha
+                } else if (threat.type === "fork") {
                   context.fillStyle = threatColor
                   context.fillRect(threat.x - 4, threat.y - 8, 8, 11)
                   context.strokeStyle = theme.orange; context.lineWidth = 3
@@ -712,7 +780,7 @@ ShellRoot {
               for (var e = 0; e < game.explosions.length; e++) {
                 var blast = game.explosions[e]
                 var radius = game.explosionRadius(blast)
-                var blastColor = blast.kind === "impact" ? theme.red : blast.kind === "chain" ? theme.yellow : theme.accent
+                var blastColor = blast.kind === "impact" ? theme.red : blast.kind === "rollback" ? theme.green : blast.kind === "chain" ? theme.yellow : theme.accent
                 context.globalAlpha = blast.kind === "impact" ? 0.18 : 0.12
                 context.fillStyle = blastColor
                 context.beginPath(); context.arc(blast.x, blast.y, radius, 0, Math.PI * 2); context.fill()
@@ -752,6 +820,11 @@ ShellRoot {
                 context.font = "bold 10px monospace"
                 context.textAlign = "center"
                 context.fillText(service.name, service.x, game.groundY + 17)
+                var capability = game.serviceCapabilities[s]
+                if (service.name === "BOOT" && service.alive && !game.bootRecoveryAvailable) capability = "SPENT"
+                context.fillStyle = service.alive ? (capability === "SPENT" ? theme.orange : theme.green) : theme.red
+                context.font = "bold 7px monospace"
+                context.fillText(service.alive ? capability : "OFFLINE", service.x, game.groundY + 30)
                 if (!service.alive) {
                   context.strokeStyle = theme.red; context.lineWidth = 3
                   context.beginPath(); context.moveTo(serviceX + 8, game.groundY - 38); context.lineTo(serviceX + 62, game.groundY - 9); context.stroke()
@@ -779,7 +852,8 @@ ShellRoot {
                   context.fillStyle = theme.background
                   context.fillRect(battery.x - 21, game.groundY - 50, 42, 4)
                   context.fillStyle = game.firewallCooldowns[b] > 0 ? theme.orange : theme.green
-                  context.fillRect(battery.x - 20, game.groundY - 49, 40 * (1 - game.firewallCooldowns[b] / 0.24), 2)
+                  var nodeReload = game.serviceOnline("NET") ? 0.24 : 0.34
+                  context.fillRect(battery.x - 20, game.groundY - 49, 40 * (1 - game.firewallCooldowns[b] / nodeReload), 2)
                   for (var queue = 0; queue < 2; queue++) {
                     context.fillStyle = queue < batteryQueue ? theme.yellow : theme.muted
                     context.globalAlpha = queue < batteryQueue ? 0.9 : 0.25
@@ -858,7 +932,8 @@ ShellRoot {
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: shell.cabinet.tagline.toUpperCase(); color: theme.green; font.pixelSize: 13; font.family: "monospace" }
               Rectangle { width: parent.width; height: 1; color: theme.muted }
               Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; text: "DEFEND SIX CRITICAL SERVICES WITH THREE FIREWALL NODES.\nDETONATE QUARANTINE FIELDS AND CHAIN THREATS TOGETHER."; color: theme.foreground; font.pixelSize: 14; font.family: "monospace"; lineHeight: 1.3 }
-              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "FORK BOMBS SPLIT  ·  STEALTH PAYLOADS PHASE  ·  ROOTKITS DIVE"; color: theme.orange; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "ONLINE SERVICES POWER YOUR DEFENSE  ·  LOSING ONE DISABLES ITS BOOST"; color: theme.green; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "FORKS SPLIT  ·  STEALTH PHASES  ·  ROOTKITS DIVE  ·  WAVE 5 ZERO-DAY"; color: theme.orange; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "MOUSE AIM / CLICK FIRE  ·  ARROWS AIM / SPACE FIRE"; color: theme.muted; font.pixelSize: 11; font.family: "monospace" }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "1 / 2 / 3 FIREWALL  ·  0 AUTO  ·  2 IN FLIGHT PER NODE"; color: theme.muted; font.pixelSize: 11; font.family: "monospace" }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "BEST " + arcadeData.bestScore + "   ·   FURTHEST WAVE " + arcadeData.highestStage; color: theme.yellow; font.pixelSize: 13; font.family: "monospace"; font.bold: true }
@@ -887,7 +962,7 @@ ShellRoot {
               spacing: 11
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: game.mode === "paused" ? "DEFENSE GRID PAUSED" : game.mode === "waveintro" ? game.zoneName + " // WAVE " + game.wave : game.mode === "waveclear" ? "WAVE SECURED" : "CORE SERVICES LOST"; color: game.mode === "gameover" ? theme.red : game.mode === "waveclear" ? theme.green : theme.accent; font.pixelSize: 25; font.bold: true; font.letterSpacing: 1.5 }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: game.mode === "gameover" ? "SCORE " + game.score + "  ·  ENTER TO REARM" : game.mode === "paused" ? "P TO RESUME" : game.statusMessage; color: theme.foreground; font.pixelSize: 12; font.family: "monospace"; font.bold: true }
-              Text { visible: game.mode === "waveintro"; anchors.horizontalCenter: parent.horizontalCenter; text: game.wave === 1 ? "EXPLOITS INBOUND" : game.wave === 2 ? "FORK BOMBS DETECTED" : game.wave === 3 ? "STEALTH PAYLOADS DETECTED" : "ROOTKIT TRAJECTORIES DETECTED"; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { visible: game.mode === "waveintro"; anchors.horizontalCenter: parent.horizontalCenter; text: game.wave % 5 === 0 ? "ZERO-DAY SIEGE // THREE QUARANTINE HITS REQUIRED" : game.wave === 1 ? "EXPLOITS INBOUND" : game.wave === 2 ? "FORK BOMBS DETECTED" : game.wave === 3 ? "STEALTH PAYLOADS DETECTED" : "ROOTKIT TRAJECTORIES DETECTED"; color: game.wave % 5 === 0 ? theme.red : theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
             }
           }
 
