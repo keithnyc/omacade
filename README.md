@@ -6,6 +6,17 @@ profile, persistent records and achievements, and a full-stack Circuit mode.
 
 ![Omacade arcade lobby](preview.png)
 
+## Preview
+
+<p align="center">
+  <video src="docs/videos/theme-showcase.mp4" controls width="720"></video>
+</p>
+
+<p align="center">
+  <video src="docs/videos/daemon-swarm-gameplay.mp4" controls width="372"></video>
+  <video src="docs/videos/lander-gameplay.mp4" controls width="372"></video>
+</p>
+
 ## The cabinets
 
 ### 01 // Lander

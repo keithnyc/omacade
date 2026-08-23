@@ -337,9 +337,48 @@ runs rather than raw cabinet highscores, and preserve the 3000-point cap.
   `mode === "playing"` and would never see the countdown expire otherwise.
   Enemy type mix, spawn cadence, and elite-rootkit cadence all key off `wave`
   now, not `elapsed` — `elapsed` is kept only for the survival-time stat.
-- `maxEnemies` (90) caps concurrent enemies, including fork-split children —
-  the same "deliberate cap over screen flooding" philosophy as Core Command's
-  launch limits.
+- `maxEnemies` (`Math.min(240, 90 + wave * 7)`) caps concurrent enemies,
+  including fork-split children — the same "deliberate cap over screen
+  flooding" philosophy as Core Command's launch limits, now scaling with
+  `wave` so the cap itself doesn't quietly become the difficulty ceiling.
+  After playtesting reported waves in the 20s still feeling manageable,
+  `updateSpawns()` also spawns in batches (`spawnBatchSize()`, up to 5 at
+  once) on top of a faster cooldown floor — a flat per-wave cooldown nudge
+  alone couldn't move on-screen density enough without spawning absurdly
+  often at low waves too.
+- `completeWave()` clears `mines`/`bolts`/`rings`/`chains` along with
+  `enemies` so a wave transition is a clean slate, including any live-armed
+  mines — leftover hazards surviving into the next wave read as a bug, not
+  challenge.
+- A "boss" enemy type reuses the existing elite (`rootkit`) warning/cooldown
+  cycle in `updateElite()` rather than running its own parallel timer —
+  at `wave >= 10` on a `wave % 5 === 0` milestone (tracked via
+  `lastBossWave` so it fires once), the elite warning spawns `"boss"`
+  instead of `"rootkit"`. This means boss timing rides on the existing
+  16–42s elite cadence rather than a hard per-wave guarantee; that's an
+  intentional scope trade against building a second telegraph/cooldown
+  system for one enemy type.
+- Weapon/passive upgrades gained a few more axes after playtesting, all
+  following the same unlock-then-stack pool pattern: `orbitRangeLevel`
+  grows `orbitRadius` (distinct from `orbitLevel`, which adds shards),
+  `burstMultiLevel`/`burstSpreadLevel` add extra bolts to `fireBurst()`
+  (additional nearest-target bolts vs. a fixed angular fan off the primary
+  aim direction), and mines gained `mineCapBonus` (raises the concurrent
+  `mineCap` that `dropMine()` now enforces — mines were previously
+  unbounded in practice, just self-limited by cooldown vs. lifetime) and
+  `mineCascade` (a boolean unlock: a mine blast also detonates any other
+  armed mine inside its blast radius, expanded to a fixed point in
+  `updateMines()` so cascades ripple through a whole cluster in one tick,
+  not just one hop).
+- Four new passives round out the Vampire-Survivors-style pool: `regenLevel`
+  (slow HP regen, ticked in `tick()`), `failoverCharges` (one-time revives
+  at half `maxHp`, consumed in `damagePlayer()` before `finishRun()` would
+  otherwise fire), `critLevel` (routed through one shared `rollDamage(base)`
+  helper called at every damage site — bolts, ring, chain, orbit, mines —
+  so a crit upgrade doesn't require touching each weapon separately), and
+  `slowAuraLevel` (a passive radius around the player that reduces enemy
+  speed while they're inside it, checked inline in `updateEnemies()`'s
+  movement step since it already has `dist` to the player computed).
 - The 16ms Timer is gated on `!game.tooSmall`, matching the fix applied to
   Lander/Packet Hop: never let the sim keep running (and the player keep
   taking damage) behind a "too small" overlay the player can't see through.

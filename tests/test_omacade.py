@@ -485,7 +485,7 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("function rollUpgrades()", swarm)
         self.assertIn('type === "rootkit"', swarm)
         self.assertIn('if (e.type === "fork")', swarm)
-        self.assertIn("maxEnemies: 90", swarm)
+        self.assertIn("readonly property int maxEnemies: Math.min(240, 90 + wave * 7)", swarm)
         self.assertIn('difficulty: "swarm"', swarm)
         self.assertIn("stage: wave,", swarm)
         self.assertIn("time: Math.round(elapsed), kills: kills, elites: elites, level: level", swarm)
@@ -499,6 +499,23 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("readonly property real worldAspect: worldWidth / worldHeight", swarm)
         self.assertIn("width: Math.min(parent.width, parent.height * game.worldAspect)", swarm)
         self.assertIn("renderStrategy: Canvas.Threaded", swarm)
+
+        # Wave-complete transient-state clear (mines/bolts/rings/chains), per user feedback.
+        self.assertIn("mines = []\n        bolts = []\n        rings = []\n        chains = []", swarm)
+        # Enemy density should actually escalate with wave: batched spawns + faster cooldown floor.
+        self.assertIn("function spawnBatchSize()", swarm)
+        self.assertIn("Math.min(5, 1 + Math.floor(wave / 7))", swarm)
+        # Mini-boss reuses the elite warning/spawn cycle.
+        self.assertIn('type === "boss"', swarm)
+        self.assertIn("enemyProfile(type)", swarm)
+        # New weapon/passive upgrade tracks requested after playtesting.
+        for upgrade_id in (
+            "mine-cascade", "mine-cap-up", "orbit-range-up",
+            "burst-multi-up", "burst-spread-up",
+            "regen-up", "failover-up", "crit-up", "slow-aura-up",
+        ):
+            self.assertIn(f'id === "{upgrade_id}"', swarm)
+        self.assertIn("function rollDamage(base)", swarm)
 
         for effect in ("launch", "hit", "levelup", "hurt", "death"):
             wav = (ROOT / "game" / "assets" / "sfx" / f"swarm-{effect}.wav").read_bytes()
