@@ -53,17 +53,21 @@ ShellRoot {
       readonly property int orbitMaxLevel: 4
       readonly property int chainMaxLevel: 4
       readonly property int mineMaxLevel: 4
+      readonly property int turretMaxLevel: 4
       readonly property int catalystMaxLevel: 5
       readonly property int mineCap: 2 + mineCapBonus
+      readonly property int turretCap: 1 + Math.floor(turretLevel / 2)
       readonly property real slowAuraRadius: 70 + slowAuraLevel * 22
       readonly property string alertLevel: wave < 4 ? "LOW" : wave < 8 ? "ELEVATED" : wave < 14 ? "SEVERE" : "CRITICAL"
       readonly property color alertColor: alertLevel === "LOW" ? theme.green : alertLevel === "ELEVATED" ? theme.yellow : alertLevel === "SEVERE" ? theme.orange : theme.red
       readonly property int xpToNext: 6 + level * 4
       readonly property int waveKillTarget: 8 + wave * 5
       readonly property real pickupRadius: 62 + pickupBonus * 16
-      readonly property real moveSpeed: 190 * (1 + speedBonus * 0.12)
+      readonly property real moveSpeed: 190 * (1 + speedBonus * 0.15)
+      readonly property real waveHardening: Math.pow(1.025, Math.max(0, wave - 25))
       readonly property real enemySpeedMul: 1 + Math.min(3.2, wave * 0.07)
-      readonly property real enemyHpMul: 1 + wave * 0.1
+      readonly property real enemyHpMul: (1 + wave * 0.1) * waveHardening
+      readonly property real enemyDamageMul: (1 + wave * 0.03) * Math.pow(1.012, Math.max(0, wave - 25))
 
       property string mode: "attract"
       property string modeBeforeScores: "attract"
@@ -92,6 +96,8 @@ ShellRoot {
       property int mineLevel: 0
       property bool mineCascade: false
       property int mineCapBonus: 0
+      property int turretLevel: 0
+      property real turretCooldown: 0
       property int speedBonus: 0
       property int pickupBonus: 0
       property int xpBonus: 0
@@ -130,6 +136,8 @@ ShellRoot {
       property var rings: []
       property var mines: []
       property var chains: []
+      property var turrets: []
+      property var beams: []
       property var pops: []
       property var particles: []
       property var damageNumbers: []
@@ -279,6 +287,8 @@ ShellRoot {
         mineLevel = 0
         mineCascade = false
         mineCapBonus = 0
+        turretLevel = 0
+        turretCooldown = 0
         speedBonus = 0
         pickupBonus = 0
         xpBonus = 0
@@ -307,6 +317,8 @@ ShellRoot {
         rings = []
         mines = []
         chains = []
+        turrets = []
+        beams = []
         pops = []
         particles = []
         damageNumbers = []
@@ -332,7 +344,17 @@ ShellRoot {
         if (type === "fork-child") return { hp: 1, speed: 118, radius: 7, damage: 1, xp: 1, score: 8, color: "orange" }
         if (type === "trojan") return { hp: 5, speed: 52, radius: 15, damage: 2, xp: 6, score: 55, color: "red" }
         if (type === "boss") return { hp: 70, speed: 44, radius: 32, damage: 3, xp: 40, score: 900, color: "red" }
+        if (type === "boss-swift") return { hp: 46, speed: 80, radius: 26, damage: 3, xp: 44, score: 950, color: "yellow" }
+        if (type === "boss-tank") return { hp: 130, speed: 30, radius: 38, damage: 4, xp: 50, score: 1050, color: "accent" }
         return { hp: 18, speed: 62, radius: 21, damage: 2, xp: 18, score: 400, color: "accent" }
+      }
+
+      function isBossType(type) {
+        return type === "boss" || type === "boss-swift" || type === "boss-tank"
+      }
+
+      function bossTypePool() {
+        return ["boss", "boss-swift", "boss-tank"]
       }
 
       function pickEnemyType() {
@@ -358,7 +380,7 @@ ShellRoot {
         var scaledHp = Math.max(1, Math.round(profile.hp * enemyHpMul))
         return { id: enemySerial, type: type, x: pos.x, y: pos.y, hp: scaledHp, maxHp: scaledHp,
                  speed: profile.speed * enemySpeedMul, radius: profile.radius,
-                 damage: profile.damage + Math.floor(wave / 15),
+                 damage: Math.max(profile.damage, Math.round(profile.damage * enemyDamageMul)),
                  xp: profile.xp, score: profile.score, colorKey: profile.color, hitFlash: 0,
                  orbitCooldown: 0, modifier: null }
       }
@@ -606,6 +628,77 @@ ShellRoot {
         mines = active
       }
 
+      function dropTurret() {
+        if (turrets.length >= turretCap) return
+        var updated = turrets.slice(0)
+        var maxHp = 10 + turretLevel * 6
+        updated.push({ x: playerX, y: playerY, hp: maxHp, maxHp: maxHp, life: 0, maxLife: 16 + turretLevel * 2, fireCooldown: 0.3 })
+        turrets = updated
+        turretCooldown = Math.max(1.6, 5 - turretLevel * 0.5)
+      }
+
+      function updateTurrets(dt) {
+        if (turrets.length === 0) return
+        var range = 170 + turretLevel * 16
+        var fireInterval = Math.max(0.32, 1.3 - turretLevel * 0.22)
+        var dmg = 3 + turretLevel * 3
+        var active = []
+        for (var i = 0; i < turrets.length; i++) {
+          var t = turrets[i]
+          t.life += dt
+          t.fireCooldown -= dt
+          for (var e = 0; e < enemies.length; e++) {
+            var en = enemies[e]
+            var dx = en.x - t.x, dy = en.y - t.y
+            if (dx * dx + dy * dy <= (en.radius + 14) * (en.radius + 14)) t.hp -= en.damage * 2.4 * dt
+          }
+          if (t.hp <= 0) {
+            spawnBurst(t.x, t.y, "red", 22, 210, 0.4)
+            spawnPop(t.x, t.y, "red", 44, 0.35)
+            continue
+          }
+          if (t.life >= t.maxLife) {
+            spawnPop(t.x, t.y, "accent", 30, 0.3)
+            continue
+          }
+          if (t.fireCooldown <= 0) {
+            var target = null
+            var bestD = range * range
+            for (var j = 0; j < enemies.length; j++) {
+              var cand = enemies[j]
+              var cdx = cand.x - t.x, cdy = cand.y - t.y
+              var cd = cdx * cdx + cdy * cdy
+              if (cd < bestD) { bestD = cd; target = cand }
+            }
+            if (target) {
+              applyDamage(target, dmg, 0.14)
+              var updatedBeams = beams.slice(0)
+              updatedBeams.push({ x1: t.x, y1: t.y, x2: target.x, y2: target.y, life: 0, duration: 0.12 })
+              beams = updatedBeams
+              shell.play(hitSound)
+            }
+            t.fireCooldown = fireInterval
+          }
+          active.push(t)
+        }
+        turrets = active
+      }
+
+      function updateBeams(dt) {
+        var active = []
+        for (var i = 0; i < beams.length; i++) {
+          var b = beams[i]
+          b.life += dt
+          if (b.life < b.duration) active.push(b)
+        }
+        beams = active
+      }
+
+      function turretStatusText() {
+        if (turretLevel === 0) return "TURRET --"
+        return "TURRET Lv" + turretLevel + "/" + turretMaxLevel + "  x" + turretCap
+      }
+
       function updateChains(dt) {
         var active = []
         for (var i = 0; i < chains.length; i++) {
@@ -631,6 +724,10 @@ ShellRoot {
           mineCooldown = Math.max(0, mineCooldown - dt)
           if (mineCooldown <= 0) dropMine()
         }
+        if (turretLevel > 0) {
+          turretCooldown = Math.max(0, turretCooldown - dt)
+          if (turretCooldown <= 0) dropTurret()
+        }
       }
 
       function updateMovement(dt) {
@@ -648,8 +745,8 @@ ShellRoot {
 
       function dropLoot(e) {
         var updated = orbs.slice(0)
-        if (e.type === "rootkit" || e.type === "boss") {
-          var lootCount = e.type === "boss" ? 8 : 4
+        if (e.type === "rootkit" || isBossType(e.type)) {
+          var lootCount = isBossType(e.type) ? 8 : 4
           var perOrb = Math.max(1, Math.round((e.xp * 1.5) / lootCount))
           for (var i = 0; i < lootCount; i++) {
             var ang = Math.random() * Math.PI * 2
@@ -668,8 +765,8 @@ ShellRoot {
       function killRewards(e) {
         score += e.score
         dropLoot(e)
-        if (e.type === "rootkit" || e.type === "boss") {
-          statusMessage = (e.type === "boss" ? "MINI-BOSS PURGED // +" : "ROOTKIT PURGED // +") + e.score
+        if (e.type === "rootkit" || isBossType(e.type)) {
+          statusMessage = (isBossType(e.type) ? "MINI-BOSS PURGED // +" : "ROOTKIT PURGED // +") + e.score
           spawnBurst(e.x, e.y, e.colorKey, 46, 260, 0.8)
           spawnBurst(e.x, e.y, "foreground", 14, 320, 0.5)
           spawnPop(e.x, e.y, e.colorKey, 90, 0.55)
@@ -782,7 +879,7 @@ ShellRoot {
             killRewards(e)
             kills += 1
             waveKills += 1
-            if (e.type === "rootkit" || e.type === "boss") elites += 1
+            if (e.type === "rootkit" || isBossType(e.type)) elites += 1
             if (e.modifier === "volatile") triggerVolatileDeath(e)
             if (e.type === "fork") {
               spawnQueue.push({ x: e.x, y: e.y })
@@ -860,6 +957,7 @@ ShellRoot {
         if (orbitLevel === 0) pool.push({ id: "unlock-orbit", title: "PATCH ORBIT", detail: "Unlock an orbiting shard that damages on contact." })
         if (chainLevel === 0) pool.push({ id: "unlock-chain", title: "TRACEROUTE ARC", detail: "Unlock chain lightning that arcs between nearby threats." })
         if (mineLevel === 0) pool.push({ id: "unlock-mine", title: "HONEYPOT MINE", detail: "Unlock a proximity trap that detonates on contact." })
+        if (turretLevel === 0) pool.push({ id: "unlock-turret", title: "AUTO-TURRET", detail: "Deploy a stationary turret that lasers nearby threats." })
         if (ringLevel > 0 && ringLevel < ringMaxLevel && !ringEvolved) pool.push({ id: "ring-up", title: "RING OVERCLOCK", detail: "Firewall Ring: +radius, +damage, faster pulse." })
         if (orbitLevel > 0 && orbitLevel < orbitMaxLevel && !orbitEvolved) pool.push({ id: "orbit-up", title: "ORBIT SHARD", detail: "Patch Orbit: +1 shard." })
         if (orbitLevel > 0 && !orbitEvolved) pool.push({ id: "orbit-range-up", title: "ORBIT EXPANSE", detail: "Patch Orbit: shards orbit further out." })
@@ -867,10 +965,11 @@ ShellRoot {
         if (mineLevel > 0 && mineLevel < mineMaxLevel && !mineEvolved) pool.push({ id: "mine-up", title: "MINE OVERCLOCK", detail: "Honeypot Mine: +blast radius, +damage, faster redeploy." })
         if (mineLevel > 0) pool.push({ id: "mine-cap-up", title: "EXPANDED PAYLOAD", detail: "Honeypot Mine: +1 max deployed at once." })
         if (mineLevel > 0 && !mineCascade && !mineEvolved) pool.push({ id: "mine-cascade", title: "CASCADE TRIGGER", detail: "Honeypot Mine: blasts also detonate nearby mines." })
+        if (turretLevel > 0 && turretLevel < turretMaxLevel) pool.push({ id: "turret-up", title: "TURRET OVERCLOCK", detail: "Auto-Turret: +damage, +range, faster fire and redeploy." })
         if (burstLevel < burstMaxLevel && !burstEvolved) pool.push({ id: "burst-up", title: "PACKET OVERCLOCK", detail: "Packet Burst: faster fire, +pierce, +damage." })
         pool.push({ id: "burst-multi-up", title: "PACKET FORK", detail: "Packet Burst: +1 simultaneous target." })
         pool.push({ id: "burst-spread-up", title: "SPREAD ROUTING", detail: "Packet Burst: +2 angled bolts per shot." })
-        if (speedBonus < catalystMaxLevel) pool.push({ id: "speed-up", title: "IO BOOST", detail: "+12% movement speed." })
+        if (speedBonus < catalystMaxLevel) pool.push({ id: "speed-up", title: "IO BOOST", detail: "+15% movement speed." })
         pool.push({ id: "hp-up", title: "INTEGRITY PATCH", detail: "+1 max integrity, heal 1." })
         pool.push({ id: "pickup-up", title: "WIDE SCAN", detail: "+ pickup radius for stray packets." })
         pool.push({ id: "xp-up", title: "CACHE BOOST", detail: "+1 value on every packet collected." })
@@ -933,6 +1032,7 @@ ShellRoot {
         else if (id === "unlock-orbit") orbitLevel = 1
         else if (id === "unlock-chain") { chainLevel = 1; chainCooldown = 0.8 }
         else if (id === "unlock-mine") { mineLevel = 1; mineCooldown = 1.2 }
+        else if (id === "unlock-turret") { turretLevel = 1; turretCooldown = 1.5 }
         else if (id === "ring-up") ringLevel += 1
         else if (id === "orbit-up") orbitLevel += 1
         else if (id === "orbit-range-up") orbitRangeLevel += 1
@@ -940,6 +1040,7 @@ ShellRoot {
         else if (id === "mine-up") mineLevel += 1
         else if (id === "mine-cap-up") mineCapBonus += 1
         else if (id === "mine-cascade") mineCascade = true
+        else if (id === "turret-up") turretLevel += 1
         else if (id === "burst-up") burstLevel += 1
         else if (id === "burst-multi-up") burstMultiLevel += 1
         else if (id === "burst-spread-up") burstSpreadLevel += 1
@@ -979,8 +1080,9 @@ ShellRoot {
           burstCooldown = 0; ringCooldown = 0; chainCooldown = 0; mineCooldown = 0
           waveReward = "AMMO CACHE // WEAPONS RECHARGED"
         } else if (pick === "shield") {
-          invulnerable = Math.max(invulnerable, 3.0)
-          waveReward = "EMERGENCY SHIELD // 3S INVULNERABLE"
+          var shieldDuration = 10 + Math.random() * 10
+          invulnerable = Math.max(invulnerable, shieldDuration)
+          waveReward = "EMERGENCY SHIELD // " + Math.round(shieldDuration) + "S INVULNERABLE"
         } else {
           var bonus2 = 100 + wave * 15
           score += bonus2
@@ -1023,8 +1125,9 @@ ShellRoot {
         if (eliteWarning > 0) {
           eliteWarning -= dt
           if (eliteWarning <= 0) {
-            var isBoss = wave >= 10 && wave % 5 === 0 && lastBossWave !== wave
-            var spawned = spawnElite(isBoss ? "boss" : "rootkit", eliteWarningPos)
+            var isBoss = wantsBossSpawn()
+            var bossType = bossTypePool()[Math.floor(Math.random() * bossTypePool().length)]
+            var spawned = spawnElite(isBoss ? bossType : "rootkit", eliteWarningPos)
             var modTag = spawned && spawned.modifier ? " // " + spawned.modifier.toUpperCase() : ""
             if (isBoss) {
               lastBossWave = wave
@@ -1041,8 +1144,15 @@ ShellRoot {
           eliteWarningPos = edgeSpawnPoint()
           eliteWarning = 1.4
           eliteCooldown = Math.max(16, 42 - wave * 0.6)
-          statusMessage = (wave >= 10 && wave % 5 === 0 && lastBossWave !== wave) ? "MINI-BOSS DETECTED // INBOUND" : "ROOTKIT DETECTED // INBOUND"
+          statusMessage = wantsBossSpawn() ? "MINI-BOSS DETECTED // INBOUND" : "ROOTKIT DETECTED // INBOUND"
         }
+      }
+
+      function wantsBossSpawn() {
+        var milestone = wave >= 10 && wave % 5 === 0 && lastBossWave !== wave
+        if (milestone) return true
+        var bonusChance = wave >= 20 ? Math.min(0.35, (wave - 20) * 0.01) : 0
+        return bonusChance > 0 && Math.random() < bonusChance
       }
 
       function finishRun() {
@@ -1102,6 +1212,8 @@ ShellRoot {
         updateMovement(dt)
         updateWeapons(dt)
         updateMines(dt)
+        updateTurrets(dt)
+        updateBeams(dt)
         updateEnemies(dt)
         if (mode !== "playing") return
         if (waveKills >= waveKillTarget) { completeWave(); return }
@@ -1386,7 +1498,7 @@ ShellRoot {
                     if (hx === 0) context.moveTo(hxp, hyp); else context.lineTo(hxp, hyp)
                   }
                   context.closePath(); context.fill(); context.stroke()
-                } else if (en.type === "boss") {
+                } else if (game.isBossType(en.type)) {
                   context.rotate(game.animationTime * 0.5)
                   context.beginPath()
                   for (var sx = 0; sx < 12; sx++) {
@@ -1434,7 +1546,7 @@ ShellRoot {
                   context.beginPath(); context.arc(en.x, en.y, en.radius + 6, 0, Math.PI * 2); context.stroke()
                   context.globalAlpha = 1
                 }
-                if (en.type === "rootkit" || en.type === "boss") {
+                if (en.type === "rootkit" || game.isBossType(en.type)) {
                   context.fillStyle = theme.foreground
                   context.font = "bold 9px monospace"
                   context.textAlign = "center"
@@ -1481,6 +1593,39 @@ ShellRoot {
                 context.fillStyle = mineCol
                 context.globalAlpha = armed ? 0.9 : 0.4
                 context.beginPath(); context.arc(mine.x, mine.y, 3.4, 0, Math.PI * 2); context.fill()
+              }
+              context.globalAlpha = 1
+
+              for (var tui = 0; tui < game.turrets.length; tui++) {
+                var turret = game.turrets[tui]
+                var turretHpRatio = Math.max(0, turret.hp / turret.maxHp)
+                context.globalAlpha = 0.85
+                context.fillStyle = theme.accent
+                context.beginPath(); context.arc(turret.x, turret.y, 10, 0, Math.PI * 2); context.fill()
+                context.strokeStyle = theme.foreground
+                context.lineWidth = 1.6
+                context.beginPath(); context.arc(turret.x, turret.y, 10, 0, Math.PI * 2); context.stroke()
+                context.globalAlpha = 1
+                context.strokeStyle = theme.muted
+                context.lineWidth = 3
+                context.beginPath(); context.moveTo(turret.x - 8, turret.y - 15); context.lineTo(turret.x + 8, turret.y - 15); context.stroke()
+                context.strokeStyle = turretHpRatio > 0.4 ? theme.green : theme.red
+                context.lineWidth = 3
+                context.beginPath(); context.moveTo(turret.x - 8, turret.y - 15); context.lineTo(turret.x - 8 + 16 * turretHpRatio, turret.y - 15); context.stroke()
+              }
+              context.globalAlpha = 1
+
+              for (var bmi = 0; bmi < game.beams.length; bmi++) {
+                var beam = game.beams[bmi]
+                var beamAlpha = Math.max(0, 1 - beam.life / beam.duration)
+                context.globalAlpha = beamAlpha
+                context.strokeStyle = theme.red
+                context.lineWidth = 2.6
+                context.beginPath(); context.moveTo(beam.x1, beam.y1); context.lineTo(beam.x2, beam.y2); context.stroke()
+                context.globalAlpha = beamAlpha * 0.6
+                context.lineWidth = 1
+                context.strokeStyle = theme.foreground
+                context.beginPath(); context.moveTo(beam.x1, beam.y1); context.lineTo(beam.x2, beam.y2); context.stroke()
               }
               context.globalAlpha = 1
 
@@ -1664,8 +1809,9 @@ ShellRoot {
               Text { text: game.orbitStatusText(); color: game.orbitEvolved ? theme.yellow : (game.orbitLevel > 0 ? theme.green : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Text { text: game.chainStatusText(); color: game.chainEvolved ? theme.accent : (game.chainLevel > 0 ? theme.yellow : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Text { text: game.mineStatusText(); color: game.mineEvolved ? theme.yellow : (game.mineLevel > 0 ? theme.orange : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
+              Text { text: game.turretStatusText(); color: game.turretLevel > 0 ? theme.accent : theme.muted; font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Rectangle { visible: game.speedBonus > 0 || game.pickupBonus > 0 || game.maxHp > 5 || game.xpBonus > 0 || game.shieldBonus > 0 || game.regenLevel > 0 || game.failoverCharges > 0 || game.critLevel > 0 || game.slowAuraLevel > 0; width: parent.width; height: 1; color: theme.muted }
-              Text { visible: game.speedBonus > 0; text: "SPD    +" + (game.speedBonus * 12) + "%  Lv" + game.speedBonus + "/" + game.catalystMaxLevel; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { visible: game.speedBonus > 0; text: "SPD    +" + (game.speedBonus * 15) + "%  Lv" + game.speedBonus + "/" + game.catalystMaxLevel; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.pickupBonus > 0; text: "SCAN   +" + game.pickupBonus; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.maxHp > 5; text: "MAX HP " + game.maxHp; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.xpBonus > 0; text: "CACHE  +" + game.xpBonus; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
@@ -1698,6 +1844,7 @@ ShellRoot {
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "AUTO-FIRE TARGETS THE NEAREST THREAT  ·  CLEARING A WAVE BANKS A FREE REWARD"; color: theme.green; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "FORKS SPLIT ON DEATH  ·  ROOTKIT ELITES FROM WAVE 6  ·  MINI-BOSSES FROM WAVE 10"; color: theme.orange; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "ELITES CAN BE SHIELDED, FAST, OR VOLATILE  ·  RARE MAGNET PACKETS SWEEP THE FIELD"; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "MINI-BOSSES GROW MORE UNPREDICTABLE AT HIGH WAVES  ·  DEPLOY AN AUTO-TURRET FOR COVERING FIRE"; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "← ↑ ↓ → / WASD MOVE"; color: theme.muted; font.pixelSize: 11; font.family: "monospace" }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "BEST " + arcadeData.bestScore + "   ·   FURTHEST WAVE " + arcadeData.highestStage; color: theme.yellow; font.pixelSize: 13; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "PRESS ENTER TO BOOT"; color: theme.accent; font.pixelSize: 18; font.family: "monospace"; font.bold: true

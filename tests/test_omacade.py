@@ -560,7 +560,9 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("function completeWave()", swarm)
         self.assertIn("function rollWaveReward()", swarm)
         self.assertIn("readonly property int waveKillTarget: 8 + wave * 5", swarm)
-        self.assertIn("readonly property real enemyHpMul: 1 + wave * 0.1", swarm)
+        self.assertIn("readonly property real waveHardening: Math.pow(1.025, Math.max(0, wave - 25))", swarm)
+        self.assertIn("readonly property real enemyHpMul: (1 + wave * 0.1) * waveHardening", swarm)
+        self.assertIn("readonly property real enemyDamageMul: (1 + wave * 0.03) * Math.pow(1.012, Math.max(0, wave - 25))", swarm)
         self.assertIn('mode === "wavecomplete"', swarm)
         self.assertNotIn("Math.min(4, ringLevel", swarm)
         self.assertNotIn("Math.min(5, burstLevel", swarm)
@@ -591,11 +593,11 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn('if (target.modifier === "shielded") amount = Math.max(1, Math.round(amount * 0.6))', swarm)
         self.assertIn("function triggerVolatileDeath(e)", swarm)
         self.assertIn('if (e.modifier === "volatile") triggerVolatileDeath(e)', swarm)
-        self.assertIn('spawnElite(isBoss ? "boss" : "rootkit", eliteWarningPos)', swarm)
+        self.assertIn('spawnElite(isBoss ? bossType : "rootkit", eliteWarningPos)', swarm)
 
         # Elites drop multiple loot packets; kills roll a rare magnet pickup that sweeps the field.
         self.assertIn("function dropLoot(e)", swarm)
-        self.assertIn("var lootCount = e.type === \"boss\" ? 8 : 4", swarm)
+        self.assertIn("var lootCount = isBossType(e.type) ? 8 : 4", swarm)
         self.assertIn("function hasMagnetOrb()", swarm)
         self.assertIn("function triggerMagnetBurst()", swarm)
 
@@ -621,6 +623,31 @@ class OmacadeTests(unittest.TestCase):
         # Evolution cards are visually flagged on the level-up screen.
         self.assertIn('isEvolution: modelData.id.indexOf("evolve-") === 0', swarm)
         self.assertIn('orb.kind === "magnet"', swarm)
+
+        # Random mini-boss variety + off-milestone boss chance at high waves.
+        self.assertIn("function isBossType(type)", swarm)
+        self.assertIn("function bossTypePool()", swarm)
+        self.assertIn('return ["boss", "boss-swift", "boss-tank"]', swarm)
+        self.assertIn("function wantsBossSpawn()", swarm)
+        self.assertIn("var bonusChance = wave >= 20 ? Math.min(0.35, (wave - 20) * 0.01) : 0", swarm)
+
+        # Movement-speed catalyst bumped from 12% to 15% per level so it reads against enemy speed scaling.
+        self.assertIn("readonly property real moveSpeed: 190 * (1 + speedBonus * 0.15)", swarm)
+        self.assertIn('"SPD    +" + (game.speedBonus * 15) + "%', swarm)
+
+        # Wave-complete shield reward randomized to 10-20s (was a flat, easily-missed 3s).
+        self.assertIn("var shieldDuration = 10 + Math.random() * 10", swarm)
+        self.assertIn("invulnerable = Math.max(invulnerable, shieldDuration)", swarm)
+
+        # Auto-Turret: sixth weapon, deploys like a mine but auto-fires a laser and can be destroyed or expire.
+        self.assertIn("function dropTurret()", swarm)
+        self.assertIn("function updateTurrets(dt)", swarm)
+        self.assertIn("function updateBeams(dt)", swarm)
+        self.assertIn("function turretStatusText()", swarm)
+        self.assertIn('id === "unlock-turret"', swarm)
+        self.assertIn('id === "turret-up"', swarm)
+        self.assertIn("if (t.hp <= 0) {", swarm)
+        self.assertIn("if (t.life >= t.maxLife) {", swarm)
 
         for effect in ("launch", "hit", "levelup", "hurt", "death"):
             wav = (ROOT / "game" / "assets" / "sfx" / f"swarm-{effect}.wav").read_bytes()
