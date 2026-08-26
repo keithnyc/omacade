@@ -566,7 +566,7 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn('mode === "wavecomplete"', swarm)
         self.assertNotIn("Math.min(4, ringLevel", swarm)
         self.assertNotIn("Math.min(5, burstLevel", swarm)
-        self.assertIn("readonly property real worldAspect: worldWidth / worldHeight", swarm)
+        self.assertIn("readonly property real worldAspect: viewportWidth / viewportHeight", swarm)
         self.assertIn("width: Math.min(parent.width, parent.height * game.worldAspect)", swarm)
         self.assertIn("renderStrategy: Canvas.Threaded", swarm)
 
@@ -688,6 +688,29 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("invulnerable = 0.9 + Math.min(shieldBonus, 8) * 0.15", swarm)
         self.assertIn("readonly property real levelHardening: Math.pow(1.05, Math.max(0, level - 30))", swarm)
         self.assertIn("readonly property int xpToNext: Math.round((6 + level * 4) * levelHardening)", swarm)
+
+        # Scrolling camera: the arena (worldWidth/Height) is bigger than the fixed on-screen
+        # viewport, and the camera follows the player through it with parallax background layers.
+        self.assertIn("readonly property real worldWidth: 2400", swarm)
+        self.assertIn("readonly property real worldHeight: 2400", swarm)
+        self.assertIn("readonly property real viewportWidth: 900", swarm)
+        self.assertIn("readonly property real viewportHeight: 900", swarm)
+        self.assertIn("readonly property real parallaxFar: 0.35", swarm)
+        self.assertIn("readonly property real parallaxNear: 0.65", swarm)
+        self.assertIn("property real cameraX: worldWidth / 2", swarm)
+        self.assertIn("property real cameraY: worldHeight / 2", swarm)
+        self.assertIn("function updateCamera(dt)", swarm)
+        self.assertIn("var followRate = Math.min(1, dt * 8)", swarm)
+        # Enemies spawn relative to the player's viewport, not the (much larger) world edges.
+        self.assertIn("function edgeSpawnPoint()", swarm)
+        self.assertIn("var halfW = viewportWidth / 2 + margin", swarm)
+        # Background canvas repaints every tick now (camera-dependent), not on a slow timer.
+        self.assertIn("worldCanvas.requestPaint()\n          bgCanvas.requestPaint()", swarm)
+        self.assertIn("function drawStars(list, parallax, minAlpha, maxAlpha, size)", swarm)
+        self.assertIn("drawStars(game.starsFar, game.parallaxFar, 0.08, 0.22, 1)", swarm)
+        self.assertIn("drawStars(game.starsNear, game.parallaxNear, 0.16, 0.38, 1.6)", swarm)
+        self.assertIn("readonly property int maxOrbs: 260", swarm)
+        self.assertIn("if (orbs.length > maxOrbs) orbs = orbs.slice(orbs.length - maxOrbs)", swarm)
 
         for effect in ("launch", "hit", "levelup", "hurt", "death"):
             wav = (ROOT / "game" / "assets" / "sfx" / f"swarm-{effect}.wav").read_bytes()

@@ -39,11 +39,21 @@ ShellRoot {
       anchors.fill: parent
       focus: true
 
-      readonly property real worldWidth: 900
-      readonly property real worldHeight: 900
-      readonly property real worldAspect: worldWidth / worldHeight
+      // The arena is bigger than what's ever on screen at once -- the camera follows the
+      // player through it. viewportWidth/Height is the fixed visible window (matches the
+      // old single-screen world size 1:1, so weapon ranges/spawn feel are unchanged).
+      readonly property real worldWidth: 2400
+      readonly property real worldHeight: 2400
+      readonly property real viewportWidth: 900
+      readonly property real viewportHeight: 900
+      readonly property real worldAspect: viewportWidth / viewportHeight
       readonly property bool tooSmall: worldCanvas.width < 560 || worldCanvas.height < 560
       readonly property real playerRadius: 13
+      // Background depth layers scroll at a fraction of the camera's motion (parallax);
+      // the grid/border below moves 1:1 with the camera as the "ground truth" reference.
+      readonly property real parallaxFar: 0.35
+      readonly property real parallaxNear: 0.65
+      readonly property int maxOrbs: 260
       readonly property real orbitRadius: 58 + orbitRangeLevel * 16
       readonly property real orbitSpin: orbitEvolved ? 5.4 : 3.1
       readonly property int orbitDamage: 1 + orbitLevel + (orbitEvolved ? 2 : 0)
@@ -88,6 +98,8 @@ ShellRoot {
       property string modeBeforeScores: "attract"
       property real playerX: worldWidth / 2
       property real playerY: worldHeight / 2
+      property real cameraX: worldWidth / 2
+      property real cameraY: worldHeight / 2
       property int maxHp: 5
       property int hp: 5
       property real invulnerable: 0
@@ -156,7 +168,8 @@ ShellRoot {
       property var pops: []
       property var particles: []
       property var damageNumbers: []
-      property var stars: []
+      property var starsFar: []
+      property var starsNear: []
       property var upgradeChoices: []
       property bool leftHeld: false
       property bool rightHeld: false
@@ -167,10 +180,20 @@ ShellRoot {
       property bool initialsPristine: true
 
       Component.onCompleted: {
-        var generated = []
-        for (var i = 0; i < 70; i++)
-          generated.push({ x: Math.random() * worldWidth, y: Math.random() * worldHeight, phase: Math.random() * 6.28 })
-        stars = generated
+        // Generated across the world bounds plus a margin so both parallax layers stay
+        // fully covered at every camera position (see parallaxFar/parallaxNear above).
+        var marginX = viewportWidth / 2
+        var marginY = viewportHeight / 2
+        function scatterStars(count) {
+          var generated = []
+          for (var i = 0; i < count; i++)
+            generated.push({ x: -marginX + Math.random() * (worldWidth + marginX * 2),
+                             y: -marginY + Math.random() * (worldHeight + marginY * 2),
+                             phase: Math.random() * 6.28 })
+          return generated
+        }
+        starsFar = scatterStars(260)
+        starsNear = scatterStars(160)
         resetRun()
         forceActiveFocus()
       }
@@ -283,6 +306,8 @@ ShellRoot {
       function resetRun() {
         playerX = worldWidth / 2
         playerY = worldHeight / 2
+        cameraX = worldWidth / 2
+        cameraY = worldHeight / 2
         maxHp = 5
         hp = 5
         invulnerable = 0
@@ -385,12 +410,19 @@ ShellRoot {
       }
 
       function edgeSpawnPoint() {
+        // Spawns just outside the player's current viewport, not the (much larger) world
+        // edges -- with a scrolling camera, spawning at fixed world bounds would place
+        // enemies miles from wherever the player actually is.
         var side = Math.floor(Math.random() * 4)
-        var margin = 20
-        if (side === 0) return { x: Math.random() * worldWidth, y: -margin }
-        if (side === 1) return { x: worldWidth + margin, y: Math.random() * worldHeight }
-        if (side === 2) return { x: Math.random() * worldWidth, y: worldHeight + margin }
-        return { x: -margin, y: Math.random() * worldHeight }
+        var margin = 30
+        var halfW = viewportWidth / 2 + margin
+        var halfH = viewportHeight / 2 + margin
+        var x, y
+        if (side === 0) { x = playerX + (Math.random() * 2 - 1) * halfW; y = playerY - halfH }
+        else if (side === 1) { x = playerX + halfW; y = playerY + (Math.random() * 2 - 1) * halfH }
+        else if (side === 2) { x = playerX + (Math.random() * 2 - 1) * halfW; y = playerY + halfH }
+        else { x = playerX - halfW; y = playerY + (Math.random() * 2 - 1) * halfH }
+        return { x: Math.max(10, Math.min(worldWidth - 10, x)), y: Math.max(10, Math.min(worldHeight - 10, y)) }
       }
 
       function makeEnemy(type, pos) {
@@ -757,6 +789,14 @@ ShellRoot {
         playerY = Math.max(playerRadius, Math.min(worldHeight - playerRadius, playerY + dy * moveSpeed * dt))
       }
 
+      function updateCamera(dt) {
+        var targetX = Math.max(viewportWidth / 2, Math.min(worldWidth - viewportWidth / 2, playerX))
+        var targetY = Math.max(viewportHeight / 2, Math.min(worldHeight - viewportHeight / 2, playerY))
+        var followRate = Math.min(1, dt * 8)
+        cameraX += (targetX - cameraX) * followRate
+        cameraY += (targetY - cameraY) * followRate
+      }
+
       function hasMagnetOrb() {
         for (var i = 0; i < orbs.length; i++) if (orbs[i].kind === "magnet") return true
         return false
@@ -779,6 +819,9 @@ ShellRoot {
         if (!hasMagnetOrb() && Math.random() < 0.015) {
           orbs = orbs.concat([{ x: e.x + (Math.random() - 0.5) * 40, y: e.y + (Math.random() - 0.5) * 40, value: 0, kind: "magnet" }])
         }
+        // The arena is much bigger than the viewport now -- orbs left behind as the player
+        // roams could otherwise accumulate forever. Drop the oldest once past the cap.
+        if (orbs.length > maxOrbs) orbs = orbs.slice(orbs.length - maxOrbs)
       }
 
       function killRewards(e) {
@@ -1229,6 +1272,7 @@ ShellRoot {
           }
         }
         updateMovement(dt)
+        updateCamera(dt)
         updateWeapons(dt)
         updateMines(dt)
         updateTurrets(dt)
@@ -1321,6 +1365,7 @@ ShellRoot {
             if (game.waveTransitionLife <= 0) game.mode = "playing"
           }
           worldCanvas.requestPaint()
+          bgCanvas.requestPaint()
         }
       }
 
@@ -1385,25 +1430,38 @@ ShellRoot {
               context.reset()
               context.fillStyle = theme.background
               context.fillRect(0, 0, width, height)
-              var bgSx = width / game.worldWidth
-              var bgSy = height / game.worldHeight
+              var bgSx = width / game.viewportWidth
+              var bgSy = height / game.viewportHeight
               context.save()
               context.scale(bgSx, bgSy)
 
-              var glow = context.createRadialGradient(game.worldWidth / 2, game.worldHeight / 2, 40,
-                                                        game.worldWidth / 2, game.worldHeight / 2, game.worldWidth * 0.72)
+              // Ambient glow stays centered on the viewport, not the world -- reads as a
+              // constant "torchlight" around the player instead of one fixed bright spot
+              // somewhere in the much larger arena.
+              var glow = context.createRadialGradient(game.viewportWidth / 2, game.viewportHeight / 2, 40,
+                                                        game.viewportWidth / 2, game.viewportHeight / 2, game.viewportWidth * 0.72)
               glow.addColorStop(0, theme.surface)
               glow.addColorStop(1, theme.background)
               context.fillStyle = glow
-              context.fillRect(0, 0, game.worldWidth, game.worldHeight)
+              context.fillRect(0, 0, game.viewportWidth, game.viewportHeight)
 
-              for (var star = 0; star < game.stars.length; star++) {
-                var point = game.stars[star]
-                context.globalAlpha = 0.18 + 0.3 * (0.5 + 0.5 * Math.sin(game.animationTime * 1.6 + point.phase))
-                context.fillStyle = theme.foreground
-                context.fillRect(point.x, point.y, 1, 1)
+              function drawStars(list, parallax, minAlpha, maxAlpha, size) {
+                context.save()
+                context.translate(game.viewportWidth / 2 - game.cameraX * parallax, game.viewportHeight / 2 - game.cameraY * parallax)
+                for (var i = 0; i < list.length; i++) {
+                  var point = list[i]
+                  context.globalAlpha = minAlpha + (maxAlpha - minAlpha) * (0.5 + 0.5 * Math.sin(game.animationTime * 1.6 + point.phase))
+                  context.fillStyle = theme.foreground
+                  context.fillRect(point.x, point.y, size, size)
+                }
+                context.restore()
               }
+              drawStars(game.starsFar, game.parallaxFar, 0.08, 0.22, 1)
+              drawStars(game.starsNear, game.parallaxNear, 0.16, 0.38, 1.6)
               context.globalAlpha = 1
+
+              context.save()
+              context.translate(game.viewportWidth / 2 - game.cameraX, game.viewportHeight / 2 - game.cameraY)
 
               context.strokeStyle = theme.muted
               context.globalAlpha = 0.08
@@ -1424,14 +1482,9 @@ ShellRoot {
               context.strokeRect(4, 4, game.worldWidth - 8, game.worldHeight - 8)
               context.globalAlpha = 1
               context.restore()
-            }
-          }
 
-          Timer {
-            interval: 120
-            repeat: true
-            running: true
-            onTriggered: bgCanvas.requestPaint()
+              context.restore()
+            }
           }
 
           Canvas {
@@ -1443,10 +1496,11 @@ ShellRoot {
             onPaint: {
               var context = getContext("2d")
               context.reset()
-              var sx = width / game.worldWidth
-              var sy = height / game.worldHeight
+              var sx = width / game.viewportWidth
+              var sy = height / game.viewportHeight
               context.save()
               context.scale(sx, sy)
+              context.translate(game.viewportWidth / 2 - game.cameraX, game.viewportHeight / 2 - game.cameraY)
               if (game.shakeTime > 0) {
                 var shakeAmt = game.shakeMag * Math.min(1, game.shakeTime / 0.15)
                 context.translate((Math.random() - 0.5) * shakeAmt, (Math.random() - 0.5) * shakeAmt)
