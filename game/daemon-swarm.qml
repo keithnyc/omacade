@@ -45,8 +45,15 @@ ShellRoot {
       readonly property bool tooSmall: worldCanvas.width < 560 || worldCanvas.height < 560
       readonly property real playerRadius: 13
       readonly property real orbitRadius: 58 + orbitRangeLevel * 16
-      readonly property int orbitDamage: 1 + orbitLevel
+      readonly property real orbitSpin: orbitEvolved ? 5.4 : 3.1
+      readonly property int orbitDamage: 1 + orbitLevel + (orbitEvolved ? 2 : 0)
       readonly property int maxEnemies: Math.min(240, 90 + wave * 7)
+      readonly property int burstMaxLevel: 5
+      readonly property int ringMaxLevel: 5
+      readonly property int orbitMaxLevel: 4
+      readonly property int chainMaxLevel: 4
+      readonly property int mineMaxLevel: 4
+      readonly property int catalystMaxLevel: 5
       readonly property int mineCap: 2 + mineCapBonus
       readonly property real slowAuraRadius: 70 + slowAuraLevel * 22
       readonly property string alertLevel: wave < 4 ? "LOW" : wave < 8 ? "ELEVATED" : wave < 14 ? "SEVERE" : "CRITICAL"
@@ -95,6 +102,11 @@ ShellRoot {
       property int critLevel: 0
       property int slowAuraLevel: 0
       property int lastBossWave: 0
+      property bool burstEvolved: false
+      property bool ringEvolved: false
+      property bool orbitEvolved: false
+      property bool chainEvolved: false
+      property bool mineEvolved: false
       property real burstCooldown: 0
       property real ringCooldown: 0
       property real chainCooldown: 0
@@ -154,6 +166,43 @@ ShellRoot {
         if (key === "accent") return theme.accent
         if (key === "yellow") return theme.yellow
         return theme.foreground
+      }
+
+      function burstStatusText() {
+        if (burstEvolved) return "BURST  PACKET STORM"
+        var extra = (burstMultiLevel > 0 ? " +" + burstMultiLevel + "T" : "") + (burstSpreadLevel > 0 ? " +" + (burstSpreadLevel * 2) + "S" : "")
+        var ready = burstLevel >= burstMaxLevel && speedBonus >= catalystMaxLevel
+        return "BURST  Lv" + burstLevel + "/" + burstMaxLevel + extra + (ready ? "  READY" : "")
+      }
+
+      function ringStatusText() {
+        if (ringLevel === 0) return "RING   --"
+        if (ringEvolved) return "RING   AEGIS PROTOCOL"
+        var ready = ringLevel >= ringMaxLevel && shieldBonus >= catalystMaxLevel
+        return "RING   Lv" + ringLevel + "/" + ringMaxLevel + (ready ? "  READY" : "")
+      }
+
+      function orbitStatusText() {
+        if (orbitLevel === 0) return "ORBIT  --"
+        if (orbitEvolved) return "ORBIT  ORBIT STORM"
+        var extra = orbitRangeLevel > 0 ? " +" + orbitRangeLevel + "R" : ""
+        var ready = orbitLevel >= orbitMaxLevel && slowAuraLevel >= catalystMaxLevel
+        return "ORBIT  Lv" + orbitLevel + "/" + orbitMaxLevel + extra + (ready ? "  READY" : "")
+      }
+
+      function chainStatusText() {
+        if (chainLevel === 0) return "ARC    --"
+        if (chainEvolved) return "ARC    ARC CASCADE"
+        var ready = chainLevel >= chainMaxLevel && critLevel >= catalystMaxLevel
+        return "ARC    Lv" + chainLevel + "/" + chainMaxLevel + (ready ? "  READY" : "")
+      }
+
+      function mineStatusText() {
+        if (mineLevel === 0) return "MINE   --"
+        if (mineEvolved) return "MINE   MINEFIELD PROTOCOL"
+        var ready = mineLevel >= mineMaxLevel && regenLevel >= catalystMaxLevel
+        var tag = mineCascade ? " CHAIN" : ""
+        return "MINE   Lv" + mineLevel + "/" + mineMaxLevel + " CAP" + mineCap + tag + (ready ? "  READY" : "")
       }
 
       function spawnBurst(x, y, colorKey, count, speed, life) {
@@ -240,6 +289,11 @@ ShellRoot {
         critLevel = 0
         slowAuraLevel = 0
         lastBossWave = 0
+        burstEvolved = false
+        ringEvolved = false
+        orbitEvolved = false
+        chainEvolved = false
+        mineEvolved = false
         burstCooldown = 0
         ringCooldown = 0
         chainCooldown = 0
@@ -368,8 +422,8 @@ ShellRoot {
         damageNumbers = active
       }
 
-      function applyDamage(target, base, flashDuration) {
-        var amount = rollDamage(base)
+      function applyDamage(target, base, flashDuration, forceCrit) {
+        var amount = forceCrit ? base * 2 : rollDamage(base)
         if (target.modifier === "shielded") amount = Math.max(1, Math.round(amount * 0.6))
         target.hp -= amount
         target.hitFlash = flashDuration || 0.12
@@ -393,13 +447,32 @@ ShellRoot {
         var updated = bolts.slice(0)
         var damage = 1 + Math.floor((burstLevel - 1) / 2)
         var pierce = burstLevel - 1
-        function pushBolt(dirX, dirY) {
+        function pushBolt(dirX, dirY, dmg) {
           updated.push({ x: playerX, y: playerY, dirX: dirX, dirY: dirY, speed: 560,
-                         damage: damage, pierce: pierce, travelled: 0, maxRange: 760, hitIds: [] })
+                         damage: dmg, pierce: pierce, travelled: 0, maxRange: 760, hitIds: [], evolved: burstEvolved })
         }
+
+        if (burstEvolved) {
+          var evoDamage = damage + 2
+          var targets = enemies.slice(0).sort(function(a, b) {
+            var da = (a.x - playerX) * (a.x - playerX) + (a.y - playerY) * (a.y - playerY)
+            var db = (b.x - playerX) * (b.x - playerX) + (b.y - playerY) * (b.y - playerY)
+            return da - db
+          }).slice(0, 10)
+          for (var t = 0; t < targets.length; t++) {
+            var tdx = targets[t].x - playerX, tdy = targets[t].y - playerY
+            var tdist = Math.sqrt(tdx * tdx + tdy * tdy) || 1
+            pushBolt(tdx / tdist, tdy / tdist, evoDamage)
+          }
+          bolts = updated
+          spawnBurst(playerX, playerY, "yellow", 6, 160, 0.18)
+          burstCooldown = Math.max(0.16, 1.15 - (burstLevel - 1) * 0.08 - 0.12)
+          return
+        }
+
         var dx0 = target.x - playerX, dy0 = target.y - playerY
         var dist0 = Math.sqrt(dx0 * dx0 + dy0 * dy0) || 1
-        pushBolt(dx0 / dist0, dy0 / dist0)
+        pushBolt(dx0 / dist0, dy0 / dist0, damage)
 
         if (burstMultiLevel > 0) {
           var candidates = enemies.slice(0).sort(function(a, b) {
@@ -412,7 +485,7 @@ ShellRoot {
             if (candidates[i].id === target.id) continue
             var mdx = candidates[i].x - playerX, mdy = candidates[i].y - playerY
             var mdist = Math.sqrt(mdx * mdx + mdy * mdy) || 1
-            pushBolt(mdx / mdist, mdy / mdist)
+            pushBolt(mdx / mdist, mdy / mdist, damage)
             picked += 1
           }
         }
@@ -421,8 +494,8 @@ ShellRoot {
           var baseAngle = Math.atan2(dy0, dx0)
           for (var s = 1; s <= burstSpreadLevel; s++) {
             var offset = 0.26 * s
-            pushBolt(Math.cos(baseAngle + offset), Math.sin(baseAngle + offset))
-            pushBolt(Math.cos(baseAngle - offset), Math.sin(baseAngle - offset))
+            pushBolt(Math.cos(baseAngle + offset), Math.sin(baseAngle + offset), damage)
+            pushBolt(Math.cos(baseAngle - offset), Math.sin(baseAngle - offset), damage)
           }
         }
 
@@ -434,9 +507,10 @@ ShellRoot {
       function pulseRing() {
         var updated = rings.slice(0)
         updated.push({ x: playerX, y: playerY, life: 0, duration: 0.4,
-                       maxRadius: 70 + ringLevel * 18, damage: 1 + ringLevel, hitIds: [] })
+                       maxRadius: (70 + ringLevel * 18) * (ringEvolved ? 1.3 : 1),
+                       damage: (1 + ringLevel) + (ringEvolved ? 2 : 0), hitIds: [], evolved: ringEvolved })
         rings = updated
-        ringCooldown = Math.max(1.3, 2.6 - (ringLevel - 1) * 0.3)
+        ringCooldown = ringEvolved ? Math.max(0.5, (2.6 - (ringLevel - 1) * 0.3) * 0.45) : Math.max(1.3, 2.6 - (ringLevel - 1) * 0.3)
       }
 
       function fireChain() {
@@ -446,13 +520,13 @@ ShellRoot {
         var hitIds = {}
         var points = [{ x: playerX, y: playerY }]
         var current = target
-        var jumps = Math.min(4, 2 + Math.floor(chainLevel / 2))
+        var jumps = chainEvolved ? Math.min(enemies.length, 12) : Math.min(4, 2 + Math.floor(chainLevel / 2))
         for (var j = 0; j < jumps && current; j++) {
           hitIds[current.id] = true
-          applyDamage(current, dmg, 0.14)
+          applyDamage(current, dmg, 0.14, chainEvolved)
           points.push({ x: current.x, y: current.y })
           var next = null
-          var bestD = 190 * 190
+          var bestD = chainEvolved ? Infinity : 190 * 190
           for (var i = 0; i < enemies.length; i++) {
             var e = enemies[i]
             if (hitIds[e.id]) continue
@@ -463,7 +537,7 @@ ShellRoot {
           current = next
         }
         var updatedChains = chains.slice(0)
-        updatedChains.push({ points: points, life: 0, duration: 0.2 })
+        updatedChains.push({ points: points, life: 0, duration: 0.2, evolved: chainEvolved })
         chains = updatedChains
         shell.play(hitSound)
         chainCooldown = Math.max(0.7, 1.5 - chainLevel * 0.15)
@@ -472,9 +546,9 @@ ShellRoot {
       function dropMine() {
         if (mines.length >= mineCap) return
         var updated = mines.slice(0)
-        updated.push({ x: playerX, y: playerY, armTime: 0.35, life: 0, maxLife: 9, radius: 15 })
+        updated.push({ x: playerX, y: playerY, armTime: 0.35, life: 0, maxLife: 9, radius: 15, evolved: mineEvolved })
         mines = updated
-        mineCooldown = Math.max(2.4, 4.2 - mineLevel * 0.5)
+        mineCooldown = mineEvolved ? Math.max(0.5, 4.2 - mineLevel * 0.5 - 2.4) : Math.max(2.4, 4.2 - mineLevel * 0.5)
       }
 
       function detonateMine(mine, blastRadius, blastDamage) {
@@ -492,8 +566,8 @@ ShellRoot {
       }
 
       function updateMines(dt) {
-        var blastRadius = 78 + mineLevel * 16
-        var blastDamage = 3 + mineLevel * 2
+        var blastRadius = (78 + mineLevel * 16) * (mineEvolved ? 1.25 : 1)
+        var blastDamage = (3 + mineLevel * 2) + (mineEvolved ? 4 : 0)
         var triggeredIds = {}
         for (var i = 0; i < mines.length; i++) {
           var mine = mines[i]
@@ -506,7 +580,7 @@ ShellRoot {
             if (dx * dx + dy * dy <= (mine.radius + enemy.radius) * (mine.radius + enemy.radius)) { triggeredIds[i] = true; break }
           }
         }
-        if (mineCascade) {
+        if (mineCascade || mineEvolved) {
           var grew = true
           while (grew) {
             grew = false
@@ -612,6 +686,7 @@ ShellRoot {
 
       function damagePlayer(amount) {
         if (invulnerable > 0 || mode !== "playing") return
+        if (ringEvolved) amount = Math.max(1, amount - 1)
         hp -= amount
         invulnerable = 0.9 + shieldBonus * 0.15
         damageFlash = 0.4
@@ -680,15 +755,16 @@ ShellRoot {
         rings = newRings
 
         if (orbitLevel > 0) {
+          var orbitHitPad = orbitEvolved ? 12 : 8
           for (var s = 0; s < orbitLevel; s++) {
-            var angle = animationTime * 3.1 + s * (Math.PI * 2 / orbitLevel)
+            var angle = animationTime * orbitSpin + s * (Math.PI * 2 / orbitLevel)
             var sx = playerX + Math.cos(angle) * orbitRadius
             var sy = playerY + Math.sin(angle) * orbitRadius
             for (var oi = 0; oi < enemies.length; oi++) {
               var otarget = enemies[oi]
               var odx = otarget.x - sx
               var ody = otarget.y - sy
-              if (odx * odx + ody * ody <= (otarget.radius + 8) * (otarget.radius + 8) && (otarget.orbitCooldown || 0) <= 0) {
+              if (odx * odx + ody * ody <= (otarget.radius + orbitHitPad) * (otarget.radius + orbitHitPad) && (otarget.orbitCooldown || 0) <= 0) {
                 applyDamage(otarget, orbitDamage)
                 otarget.orbitCooldown = 0.35
               }
@@ -784,25 +860,36 @@ ShellRoot {
         if (orbitLevel === 0) pool.push({ id: "unlock-orbit", title: "PATCH ORBIT", detail: "Unlock an orbiting shard that damages on contact." })
         if (chainLevel === 0) pool.push({ id: "unlock-chain", title: "TRACEROUTE ARC", detail: "Unlock chain lightning that arcs between nearby threats." })
         if (mineLevel === 0) pool.push({ id: "unlock-mine", title: "HONEYPOT MINE", detail: "Unlock a proximity trap that detonates on contact." })
-        if (ringLevel > 0) pool.push({ id: "ring-up", title: "RING OVERCLOCK", detail: "Firewall Ring: +radius, +damage, faster pulse." })
-        if (orbitLevel > 0) pool.push({ id: "orbit-up", title: "ORBIT SHARD", detail: "Patch Orbit: +1 shard." })
-        if (orbitLevel > 0) pool.push({ id: "orbit-range-up", title: "ORBIT EXPANSE", detail: "Patch Orbit: shards orbit further out." })
-        if (chainLevel > 0) pool.push({ id: "chain-up", title: "ARC OVERCLOCK", detail: "Traceroute Arc: +damage, +1 jump, faster pulse." })
-        if (mineLevel > 0) pool.push({ id: "mine-up", title: "MINE OVERCLOCK", detail: "Honeypot Mine: +blast radius, +damage, faster redeploy." })
+        if (ringLevel > 0 && ringLevel < ringMaxLevel && !ringEvolved) pool.push({ id: "ring-up", title: "RING OVERCLOCK", detail: "Firewall Ring: +radius, +damage, faster pulse." })
+        if (orbitLevel > 0 && orbitLevel < orbitMaxLevel && !orbitEvolved) pool.push({ id: "orbit-up", title: "ORBIT SHARD", detail: "Patch Orbit: +1 shard." })
+        if (orbitLevel > 0 && !orbitEvolved) pool.push({ id: "orbit-range-up", title: "ORBIT EXPANSE", detail: "Patch Orbit: shards orbit further out." })
+        if (chainLevel > 0 && chainLevel < chainMaxLevel && !chainEvolved) pool.push({ id: "chain-up", title: "ARC OVERCLOCK", detail: "Traceroute Arc: +damage, +1 jump, faster pulse." })
+        if (mineLevel > 0 && mineLevel < mineMaxLevel && !mineEvolved) pool.push({ id: "mine-up", title: "MINE OVERCLOCK", detail: "Honeypot Mine: +blast radius, +damage, faster redeploy." })
         if (mineLevel > 0) pool.push({ id: "mine-cap-up", title: "EXPANDED PAYLOAD", detail: "Honeypot Mine: +1 max deployed at once." })
-        if (mineLevel > 0 && !mineCascade) pool.push({ id: "mine-cascade", title: "CASCADE TRIGGER", detail: "Honeypot Mine: blasts also detonate nearby mines." })
-        pool.push({ id: "burst-up", title: "PACKET OVERCLOCK", detail: "Packet Burst: faster fire, +pierce, +damage." })
+        if (mineLevel > 0 && !mineCascade && !mineEvolved) pool.push({ id: "mine-cascade", title: "CASCADE TRIGGER", detail: "Honeypot Mine: blasts also detonate nearby mines." })
+        if (burstLevel < burstMaxLevel && !burstEvolved) pool.push({ id: "burst-up", title: "PACKET OVERCLOCK", detail: "Packet Burst: faster fire, +pierce, +damage." })
         pool.push({ id: "burst-multi-up", title: "PACKET FORK", detail: "Packet Burst: +1 simultaneous target." })
         pool.push({ id: "burst-spread-up", title: "SPREAD ROUTING", detail: "Packet Burst: +2 angled bolts per shot." })
-        pool.push({ id: "speed-up", title: "IO BOOST", detail: "+12% movement speed." })
+        if (speedBonus < catalystMaxLevel) pool.push({ id: "speed-up", title: "IO BOOST", detail: "+12% movement speed." })
         pool.push({ id: "hp-up", title: "INTEGRITY PATCH", detail: "+1 max integrity, heal 1." })
         pool.push({ id: "pickup-up", title: "WIDE SCAN", detail: "+ pickup radius for stray packets." })
         pool.push({ id: "xp-up", title: "CACHE BOOST", detail: "+1 value on every packet collected." })
-        pool.push({ id: "shield-up", title: "HARDENED SHELL", detail: "+0.15s invulnerability after each hit." })
-        pool.push({ id: "regen-up", title: "AUTO-PATCH", detail: "Slowly regenerate integrity over time." })
+        if (shieldBonus < catalystMaxLevel) pool.push({ id: "shield-up", title: "HARDENED SHELL", detail: "+0.15s invulnerability after each hit." })
+        if (regenLevel < catalystMaxLevel) pool.push({ id: "regen-up", title: "AUTO-PATCH", detail: "Slowly regenerate integrity over time." })
         pool.push({ id: "failover-up", title: "FAILOVER", detail: "+1 auto-revive at half integrity when you'd die." })
-        pool.push({ id: "crit-up", title: "EXPLOIT CHANCE", detail: "+10% chance any hit deals double damage." })
-        pool.push({ id: "slow-aura-up", title: "THROTTLE FIELD", detail: "Enemies near you move slower." })
+        if (critLevel < catalystMaxLevel) pool.push({ id: "crit-up", title: "EXPLOIT CHANCE", detail: "+10% chance any hit deals double damage." })
+        if (slowAuraLevel < catalystMaxLevel) pool.push({ id: "slow-aura-up", title: "THROTTLE FIELD", detail: "Enemies near you move slower." })
+
+        if (!burstEvolved && burstLevel >= burstMaxLevel && speedBonus >= catalystMaxLevel)
+          pool.push({ id: "evolve-burst", title: "PACKET STORM", detail: "EVOLUTION: Packet Burst strikes every visible target at once." })
+        if (!ringEvolved && ringLevel >= ringMaxLevel && shieldBonus >= catalystMaxLevel)
+          pool.push({ id: "evolve-ring", title: "AEGIS PROTOCOL", detail: "EVOLUTION: Firewall Ring pulses rapidly and blunts incoming damage." })
+        if (!orbitEvolved && orbitLevel >= orbitMaxLevel && slowAuraLevel >= catalystMaxLevel)
+          pool.push({ id: "evolve-orbit", title: "ORBIT STORM", detail: "EVOLUTION: Patch Orbit shards spin faster, bigger, and hit harder." })
+        if (!chainEvolved && chainLevel >= chainMaxLevel && critLevel >= catalystMaxLevel)
+          pool.push({ id: "evolve-chain", title: "ARC CASCADE", detail: "EVOLUTION: Traceroute Arc always crits and chains to every threat." })
+        if (!mineEvolved && mineLevel >= mineMaxLevel && regenLevel >= catalystMaxLevel)
+          pool.push({ id: "evolve-mine", title: "MINEFIELD PROTOCOL", detail: "EVOLUTION: Honeypot Mine redeploys instantly and always cascades." })
         return pool
       }
 
@@ -830,6 +917,17 @@ ShellRoot {
         killFlash = Math.max(killFlash, 0.14)
       }
 
+      function announceEvolution(name) {
+        statusMessage = "WEAPON EVOLVED // " + name
+        spawnBurst(playerX, playerY, "accent", 50, 280, 0.8)
+        spawnBurst(playerX, playerY, "yellow", 30, 320, 0.6)
+        spawnPop(playerX, playerY, "accent", 160, 0.6)
+        spawnPop(playerX, playerY, "yellow", 110, 0.45)
+        spawnShake(9, 0.35)
+        killFlash = Math.max(killFlash, 0.3)
+        shell.play(levelSound)
+      }
+
       function applyUpgrade(id) {
         if (id === "unlock-ring") { ringLevel = 1; ringCooldown = 1.0 }
         else if (id === "unlock-orbit") orbitLevel = 1
@@ -854,6 +952,11 @@ ShellRoot {
         else if (id === "failover-up") failoverCharges += 1
         else if (id === "crit-up") critLevel += 1
         else if (id === "slow-aura-up") slowAuraLevel += 1
+        else if (id === "evolve-burst") { burstEvolved = true; announceEvolution("PACKET STORM") }
+        else if (id === "evolve-ring") { ringEvolved = true; announceEvolution("AEGIS PROTOCOL") }
+        else if (id === "evolve-orbit") { orbitEvolved = true; announceEvolution("ORBIT STORM") }
+        else if (id === "evolve-chain") { chainEvolved = true; announceEvolution("ARC CASCADE") }
+        else if (id === "evolve-mine") { mineEvolved = true; announceEvolution("MINEFIELD PROTOCOL") }
         upgradeChoices = []
         mode = "playing"
       }
@@ -1343,19 +1446,20 @@ ShellRoot {
 
               for (var bi2 = 0; bi2 < game.bolts.length; bi2++) {
                 var b = game.bolts[bi2]
+                var boltCol = b.evolved ? theme.yellow : theme.accent
                 var tailDX = game.playerX - b.x, tailDY = game.playerY - b.y
                 var tailDist = Math.sqrt(tailDX * tailDX + tailDY * tailDY) || 1
                 var tailLen = Math.min(tailDist, 16)
                 var tailX = b.x + tailDX / tailDist * tailLen, tailY = b.y + tailDY / tailDist * tailLen
                 context.globalAlpha = 0.3
-                context.strokeStyle = theme.accent
+                context.strokeStyle = boltCol
                 context.lineWidth = 8
                 context.beginPath(); context.moveTo(tailX, tailY); context.lineTo(b.x, b.y); context.stroke()
                 context.globalAlpha = 1
                 context.lineWidth = 2.6
                 context.strokeStyle = theme.foreground
                 context.beginPath(); context.moveTo(tailX, tailY); context.lineTo(b.x, b.y); context.stroke()
-                context.fillStyle = theme.accent
+                context.fillStyle = boltCol
                 context.beginPath(); context.arc(b.x, b.y, 3.2, 0, Math.PI * 2); context.fill()
                 context.fillStyle = theme.foreground
                 context.beginPath(); context.arc(b.x, b.y, 1.4, 0, Math.PI * 2); context.fill()
@@ -1363,17 +1467,18 @@ ShellRoot {
 
               for (var mi = 0; mi < game.mines.length; mi++) {
                 var mine = game.mines[mi]
+                var mineCol = mine.evolved ? theme.yellow : theme.orange
                 var armed = mine.armTime <= 0
                 var minePulse = 0.55 + 0.35 * Math.sin(game.animationTime * (armed ? 9 : 4))
                 context.globalAlpha = 0.18
-                context.strokeStyle = theme.orange
+                context.strokeStyle = mineCol
                 context.lineWidth = 9
                 context.beginPath(); context.arc(mine.x, mine.y, mine.radius + 6, 0, Math.PI * 2); context.stroke()
                 context.globalAlpha = armed ? minePulse : 0.35
-                context.strokeStyle = theme.orange
+                context.strokeStyle = mineCol
                 context.lineWidth = 2.2
                 context.beginPath(); context.arc(mine.x, mine.y, mine.radius, 0, Math.PI * 2); context.stroke()
-                context.fillStyle = theme.orange
+                context.fillStyle = mineCol
                 context.globalAlpha = armed ? 0.9 : 0.4
                 context.beginPath(); context.arc(mine.x, mine.y, 3.4, 0, Math.PI * 2); context.fill()
               }
@@ -1381,11 +1486,12 @@ ShellRoot {
 
               for (var ci = 0; ci < game.chains.length; ci++) {
                 var chain = game.chains[ci]
+                var chainCol = chain.evolved ? theme.accent : theme.yellow
                 var chainProg = Math.min(1, chain.life / chain.duration)
                 var chainAlpha = 1 - chainProg
                 context.globalAlpha = 0.3 * chainAlpha
-                context.strokeStyle = theme.yellow
-                context.lineWidth = 8
+                context.strokeStyle = chainCol
+                context.lineWidth = chain.evolved ? 10 : 8
                 context.beginPath()
                 for (var cp = 0; cp < chain.points.length; cp++) {
                   var pt = chain.points[cp]
@@ -1406,13 +1512,14 @@ ShellRoot {
 
               for (var ring2 = 0; ring2 < game.rings.length; ring2++) {
                 var rg = game.rings[ring2]
+                var ringCol = rg.evolved ? theme.yellow : theme.green
                 var prog = Math.min(1, rg.life / rg.duration)
                 var rad = rg.maxRadius * Math.sin(prog * Math.PI * 0.5)
                 context.globalAlpha = 0.24
-                context.fillStyle = theme.green
+                context.fillStyle = ringCol
                 context.beginPath(); context.arc(rg.x, rg.y, rad, 0, Math.PI * 2); context.fill()
                 context.globalAlpha = 0.95
-                context.strokeStyle = theme.green
+                context.strokeStyle = ringCol
                 context.lineWidth = 4
                 context.beginPath(); context.arc(rg.x, rg.y, rad, 0, Math.PI * 2); context.stroke()
               }
@@ -1467,19 +1574,20 @@ ShellRoot {
               }
 
               if (game.orbitLevel > 0) {
+                var orbitCol = game.orbitEvolved ? theme.yellow : theme.accent
                 for (var os = 0; os < game.orbitLevel; os++) {
-                  var oAng = game.animationTime * 3.1 + os * (Math.PI * 2 / game.orbitLevel)
+                  var oAng = game.animationTime * game.orbitSpin + os * (Math.PI * 2 / game.orbitLevel)
                   var ox = game.playerX + Math.cos(oAng) * game.orbitRadius
                   var oy = game.playerY + Math.sin(oAng) * game.orbitRadius
                   context.globalAlpha = 0.32
-                  context.strokeStyle = theme.accent
+                  context.strokeStyle = orbitCol
                   context.lineWidth = 1.6
                   context.beginPath(); context.moveTo(game.playerX, game.playerY); context.lineTo(ox, oy); context.stroke()
                   context.globalAlpha = 0.24
-                  context.fillStyle = theme.accent
-                  context.beginPath(); context.arc(ox, oy, 9, 0, Math.PI * 2); context.fill()
+                  context.fillStyle = orbitCol
+                  context.beginPath(); context.arc(ox, oy, game.orbitEvolved ? 12 : 9, 0, Math.PI * 2); context.fill()
                   context.globalAlpha = 1
-                  context.beginPath(); context.arc(ox, oy, 5, 0, Math.PI * 2); context.fill()
+                  context.beginPath(); context.arc(ox, oy, game.orbitEvolved ? 7 : 5, 0, Math.PI * 2); context.fill()
                 }
               }
               context.globalAlpha = 1
@@ -1551,21 +1659,21 @@ ShellRoot {
               anchors.centerIn: parent
               spacing: 3
               Text { text: "LOADOUT"; color: theme.muted; font.pixelSize: 9; font.family: "monospace"; font.bold: true }
-              Text { text: "BURST  Lv" + game.burstLevel + (game.burstMultiLevel > 0 ? " +" + game.burstMultiLevel + "T" : "") + (game.burstSpreadLevel > 0 ? " +" + (game.burstSpreadLevel * 2) + "S" : ""); color: theme.accent; font.pixelSize: 11; font.family: "monospace"; font.bold: true }
-              Text { text: "RING   " + (game.ringLevel > 0 ? "Lv" + game.ringLevel : "--"); color: game.ringLevel > 0 ? theme.green : theme.muted; font.pixelSize: 11; font.family: "monospace"; font.bold: true }
-              Text { text: "ORBIT  " + (game.orbitLevel > 0 ? "Lv" + game.orbitLevel + (game.orbitRangeLevel > 0 ? " +" + game.orbitRangeLevel + "R" : "") : "--"); color: game.orbitLevel > 0 ? theme.green : theme.muted; font.pixelSize: 11; font.family: "monospace"; font.bold: true }
-              Text { text: "ARC    " + (game.chainLevel > 0 ? "Lv" + game.chainLevel : "--"); color: game.chainLevel > 0 ? theme.yellow : theme.muted; font.pixelSize: 11; font.family: "monospace"; font.bold: true }
-              Text { text: "MINE   " + (game.mineLevel > 0 ? "Lv" + game.mineLevel + "/" + game.mineCap + (game.mineCascade ? " CHAIN" : "") : "--"); color: game.mineLevel > 0 ? theme.orange : theme.muted; font.pixelSize: 11; font.family: "monospace"; font.bold: true }
+              Text { text: game.burstStatusText(); color: game.burstEvolved ? theme.yellow : theme.accent; font.pixelSize: 11; font.family: "monospace"; font.bold: true }
+              Text { text: game.ringStatusText(); color: game.ringEvolved ? theme.yellow : (game.ringLevel > 0 ? theme.green : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
+              Text { text: game.orbitStatusText(); color: game.orbitEvolved ? theme.yellow : (game.orbitLevel > 0 ? theme.green : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
+              Text { text: game.chainStatusText(); color: game.chainEvolved ? theme.accent : (game.chainLevel > 0 ? theme.yellow : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
+              Text { text: game.mineStatusText(); color: game.mineEvolved ? theme.yellow : (game.mineLevel > 0 ? theme.orange : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Rectangle { visible: game.speedBonus > 0 || game.pickupBonus > 0 || game.maxHp > 5 || game.xpBonus > 0 || game.shieldBonus > 0 || game.regenLevel > 0 || game.failoverCharges > 0 || game.critLevel > 0 || game.slowAuraLevel > 0; width: parent.width; height: 1; color: theme.muted }
-              Text { visible: game.speedBonus > 0; text: "SPD    +" + (game.speedBonus * 12) + "%"; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { visible: game.speedBonus > 0; text: "SPD    +" + (game.speedBonus * 12) + "%  Lv" + game.speedBonus + "/" + game.catalystMaxLevel; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.pickupBonus > 0; text: "SCAN   +" + game.pickupBonus; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.maxHp > 5; text: "MAX HP " + game.maxHp; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.xpBonus > 0; text: "CACHE  +" + game.xpBonus; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
-              Text { visible: game.shieldBonus > 0; text: "SHIELD +" + game.shieldBonus; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
-              Text { visible: game.regenLevel > 0; text: "REGEN  Lv" + game.regenLevel; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { visible: game.shieldBonus > 0; text: "SHIELD +" + game.shieldBonus + "  Lv" + game.shieldBonus + "/" + game.catalystMaxLevel; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { visible: game.regenLevel > 0; text: "REGEN  Lv" + game.regenLevel + "/" + game.catalystMaxLevel; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.failoverCharges > 0; text: "FAILOVER x" + game.failoverCharges; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
-              Text { visible: game.critLevel > 0; text: "CRIT   +" + (game.critLevel * 10) + "%"; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
-              Text { visible: game.slowAuraLevel > 0; text: "THROTTLE Lv" + game.slowAuraLevel; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { visible: game.critLevel > 0; text: "CRIT   +" + (game.critLevel * 10) + "%  Lv" + game.critLevel + "/" + game.catalystMaxLevel; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { visible: game.slowAuraLevel > 0; text: "THROTTLE Lv" + game.slowAuraLevel + "/" + game.catalystMaxLevel; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
             }
           }
 
@@ -1659,12 +1767,14 @@ ShellRoot {
                 Repeater {
                   model: game.upgradeChoices
                   delegate: Rectangle {
+                    property bool isEvolution: modelData.id.indexOf("evolve-") === 0
                     width: 190; height: 140; radius: 8
                     color: theme.background
-                    border.color: theme.accent; border.width: 1
+                    border.color: isEvolution ? theme.yellow : theme.accent; border.width: isEvolution ? 2 : 1
                     Column {
-                      anchors.fill: parent; anchors.margins: 12; spacing: 8
-                      Text { text: (index + 1) + "  " + modelData.title; color: theme.accent; font.pixelSize: 13; font.bold: true; font.family: "monospace"; wrapMode: Text.WordWrap; width: parent.width }
+                      anchors.fill: parent; anchors.margins: 12; spacing: 6
+                      Text { visible: parent.parent.isEvolution; text: "★ EVOLUTION"; color: theme.yellow; font.pixelSize: 9; font.bold: true; font.family: "monospace"; font.letterSpacing: 1 }
+                      Text { text: (index + 1) + "  " + modelData.title; color: parent.parent.isEvolution ? theme.yellow : theme.accent; font.pixelSize: 13; font.bold: true; font.family: "monospace"; wrapMode: Text.WordWrap; width: parent.width }
                       Text { text: modelData.detail; color: theme.foreground; font.pixelSize: 10; font.family: "monospace"; wrapMode: Text.WordWrap; width: parent.width }
                     }
                   }

@@ -598,6 +598,28 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("var lootCount = e.type === \"boss\" ? 8 : 4", swarm)
         self.assertIn("function hasMagnetOrb()", swarm)
         self.assertIn("function triggerMagnetBurst()", swarm)
+
+        # Weapon evolutions: each weapon pairs with a maxed catalyst passive to unlock a
+        # one-time evolved form, tracked via a bool flag and surfaced in the HUD/level-up UI.
+        self.assertIn("function announceEvolution(name)", swarm)
+        for flag in ("burstEvolved", "ringEvolved", "orbitEvolved", "chainEvolved", "mineEvolved"):
+            self.assertIn(f"property bool {flag}: false", swarm)
+        for evolve_id, catalyst_check in (
+            ('id === "evolve-burst"', "burstLevel >= burstMaxLevel && speedBonus >= catalystMaxLevel"),
+            ('id === "evolve-ring"', "ringLevel >= ringMaxLevel && shieldBonus >= catalystMaxLevel"),
+            ('id === "evolve-orbit"', "orbitLevel >= orbitMaxLevel && slowAuraLevel >= catalystMaxLevel"),
+            ('id === "evolve-chain"', "chainLevel >= chainMaxLevel && critLevel >= catalystMaxLevel"),
+            ('id === "evolve-mine"', "mineLevel >= mineMaxLevel && regenLevel >= catalystMaxLevel"),
+        ):
+            self.assertIn(evolve_id, swarm)
+            self.assertIn(catalyst_check, swarm)
+        # HUD status text functions surface Lv/max progress and a READY tag pre-evolution,
+        # then the evolved weapon name post-evolution -- the tracking indicators requested.
+        for status_fn in ("burstStatusText", "ringStatusText", "orbitStatusText", "chainStatusText", "mineStatusText"):
+            self.assertIn(f"function {status_fn}()", swarm)
+        self.assertIn('ready ? "  READY" : ""', swarm)
+        # Evolution cards are visually flagged on the level-up screen.
+        self.assertIn('isEvolution: modelData.id.indexOf("evolve-") === 0', swarm)
         self.assertIn('orb.kind === "magnet"', swarm)
 
         for effect in ("launch", "hit", "levelup", "hurt", "death"):
