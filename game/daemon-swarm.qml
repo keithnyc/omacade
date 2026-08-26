@@ -1355,7 +1355,6 @@ ShellRoot {
         interval: 16
         repeat: true
         running: !game.tooSmall
-        property int frameCounter: 0
         onTriggered: {
           var now = Date.now()
           var dt = Math.max(0.001, Math.min(0.05, (now - game.lastTickMs) / 1000))
@@ -1366,12 +1365,6 @@ ShellRoot {
             if (game.waveTransitionLife <= 0) game.mode = "playing"
           }
           worldCanvas.requestPaint()
-          // Background (grid/stars/glow) is a full-viewport repaint every time it runs, far
-          // more visual "damage" per call than any single entity -- it only needs to keep up
-          // with camera panning, not per-entity motion, so ~15fps here is imperceptible and
-          // cuts its share of per-frame cost to a quarter of running it every tick.
-          frameCounter += 1
-          if (frameCounter % 4 === 0) bgCanvas.requestPaint()
         }
       }
 
@@ -1424,96 +1417,117 @@ ShellRoot {
           anchors.bottom: footer.top
           clip: true
 
-          Canvas {
-            id: bgCanvas
+          // The background used to be a Canvas that redrew everything (gradient, stars, grid)
+          // from scratch every time the camera moved -- expensive regardless of how cheap the
+          // individual draw calls were, because panning made the *entire* viewport "dirty"
+          // every frame. Each layer below is instead rendered to a raster exactly ONCE and then
+          // just repositioned via x/y as the camera moves, which is a GPU transform on an
+          // already-rasterized texture -- not a redraw -- so panning is effectively free.
+          Item {
+            id: bgViewport
             anchors.centerIn: parent
             width: Math.min(parent.width, parent.height * game.worldAspect)
             height: width / game.worldAspect
-            // Threaded like worldCanvas -- a full-viewport background repaint on every camera
-            // pan was running synchronously on the GUI thread, which could stall frame
-            // delivery right when panning made the whole background change at once.
-            renderStrategy: Canvas.Threaded
-            property var glowStyle: null
-            onWidthChanged: { glowStyle = null; requestPaint() }
-            onHeightChanged: { glowStyle = null; requestPaint() }
-            onPaint: {
-              var context = getContext("2d")
-              context.reset()
-              context.fillStyle = theme.background
-              context.fillRect(0, 0, width, height)
-              var bgSx = width / game.viewportWidth
-              var bgSy = height / game.viewportHeight
-              context.save()
-              context.scale(bgSx, bgSy)
+            clip: true
 
-              // Ambient glow stays centered on the viewport, not the world -- reads as a
-              // constant "torchlight" around the player instead of one fixed bright spot
-              // somewhere in the much larger arena. Cached: it never changes shape/color,
-              // so building it fresh every frame was pure waste.
-              if (!glowStyle) {
-                glowStyle = context.createRadialGradient(game.viewportWidth / 2, game.viewportHeight / 2, 40,
-                                                           game.viewportWidth / 2, game.viewportHeight / 2, game.viewportWidth * 0.72)
-                glowStyle.addColorStop(0, theme.surface)
-                glowStyle.addColorStop(1, theme.background)
-              }
-              context.fillStyle = glowStyle
-              context.fillRect(0, 0, game.viewportWidth, game.viewportHeight)
+            Rectangle { anchors.fill: parent; color: theme.background }
 
-              // Only draw stars actually inside (or just outside) the visible viewport --
-              // both layers are generated across a much larger area than ever shows on
-              // screen at once (needed so parallax scrolling never runs out of stars),
-              // so drawing the full list every frame was mostly wasted fillRect calls.
-              function drawStars(list, parallax, minAlpha, maxAlpha, size) {
-                var offX = game.viewportWidth / 2 - game.cameraX * parallax
-                var offY = game.viewportHeight / 2 - game.cameraY * parallax
-                var margin = 20
-                context.save()
-                context.translate(offX, offY)
-                for (var i = 0; i < list.length; i++) {
-                  var point = list[i]
-                  var sx = point.x + offX
-                  var sy = point.y + offY
-                  if (sx < -margin || sx > game.viewportWidth + margin || sy < -margin || sy > game.viewportHeight + margin) continue
-                  context.globalAlpha = minAlpha + (maxAlpha - minAlpha) * (0.5 + 0.5 * Math.sin(game.animationTime * 1.6 + point.phase))
-                  context.fillStyle = theme.foreground
-                  context.fillRect(point.x, point.y, size, size)
+            Item {
+              id: bgScaled
+              width: game.viewportWidth
+              height: game.viewportHeight
+              scale: bgViewport.width / game.viewportWidth
+              transformOrigin: Item.TopLeft
+
+              // Ambient glow: always centered on the viewport (never pans), so it only ever
+              // needs to be drawn once.
+              Canvas {
+                id: glowCanvas
+                width: game.viewportWidth
+                height: game.viewportHeight
+                Component.onCompleted: requestPaint()
+                onPaint: {
+                  var context = getContext("2d")
+                  var glow = context.createRadialGradient(width / 2, height / 2, 40, width / 2, height / 2, width * 0.72)
+                  glow.addColorStop(0, theme.surface)
+                  glow.addColorStop(1, theme.background)
+                  context.fillStyle = glow
+                  context.fillRect(0, 0, width, height)
                 }
-                context.restore()
               }
-              drawStars(game.starsFar, game.parallaxFar, 0.08, 0.22, 1)
-              drawStars(game.starsNear, game.parallaxNear, 0.16, 0.38, 1.6)
-              context.globalAlpha = 1
 
-              context.save()
-              context.translate(game.viewportWidth / 2 - game.cameraX, game.viewportHeight / 2 - game.cameraY)
-
-              // Grid lines: only draw the span actually inside the viewport (+1 line of
-              // margin) instead of the whole (much bigger) world every frame.
-              var gridStartX = Math.max(0, Math.floor((game.cameraX - game.viewportWidth / 2) / 60 - 1) * 60)
-              var gridEndX = Math.min(game.worldWidth, Math.ceil((game.cameraX + game.viewportWidth / 2) / 60 + 1) * 60)
-              var gridStartY = Math.max(0, Math.floor((game.cameraY - game.viewportHeight / 2) / 60 - 1) * 60)
-              var gridEndY = Math.min(game.worldHeight, Math.ceil((game.cameraY + game.viewportHeight / 2) / 60 + 1) * 60)
-              context.strokeStyle = theme.muted
-              context.globalAlpha = 0.08
-              context.lineWidth = 1
-              context.beginPath()
-              for (var gridX = gridStartX; gridX <= gridEndX; gridX += 60) {
-                context.moveTo(gridX, gridStartY); context.lineTo(gridX, gridEndY)
+              // World-fixed layer (grid + arena border): spans the full world, panned 1:1
+              // with the camera. Drawn once at startup -- the world's size/geometry is fixed
+              // for the whole session, only its on-screen position changes.
+              Canvas {
+                id: worldLayerCanvas
+                width: game.worldWidth
+                height: game.worldHeight
+                x: game.viewportWidth / 2 - game.cameraX
+                y: game.viewportHeight / 2 - game.cameraY
+                Component.onCompleted: requestPaint()
+                onPaint: {
+                  var context = getContext("2d")
+                  context.strokeStyle = theme.muted
+                  context.globalAlpha = 0.08
+                  context.lineWidth = 1
+                  context.beginPath()
+                  for (var gridX = 0; gridX <= game.worldWidth; gridX += 60) {
+                    context.moveTo(gridX, 0); context.lineTo(gridX, game.worldHeight)
+                  }
+                  for (var gridY = 0; gridY <= game.worldHeight; gridY += 60) {
+                    context.moveTo(0, gridY); context.lineTo(game.worldWidth, gridY)
+                  }
+                  context.stroke()
+                  context.globalAlpha = 0.35
+                  context.lineWidth = 3
+                  context.strokeStyle = theme.accent
+                  context.strokeRect(4, 4, game.worldWidth - 8, game.worldHeight - 8)
+                  context.globalAlpha = 1
+                }
               }
-              for (var gridY = gridStartY; gridY <= gridEndY; gridY += 60) {
-                context.moveTo(gridStartX, gridY); context.lineTo(gridEndX, gridY)
+
+              // Star layers: baked once across their full generation span (see
+              // Component.onCompleted below), then panned at a fraction of the camera's
+              // motion for the parallax effect -- same math as before, just done via
+              // position instead of a per-frame redraw.
+              Canvas {
+                id: starsFarCanvas
+                width: game.worldWidth + game.viewportWidth
+                height: game.worldHeight + game.viewportHeight
+                x: -game.cameraX * game.parallaxFar
+                y: -game.cameraY * game.parallaxFar
+                Connections { target: game; function onStarsFarChanged() { starsFarCanvas.requestPaint() } }
+                onPaint: {
+                  var context = getContext("2d")
+                  context.fillStyle = theme.foreground
+                  for (var i = 0; i < game.starsFar.length; i++) {
+                    var point = game.starsFar[i]
+                    context.globalAlpha = 0.15
+                    context.fillRect(point.x + game.viewportWidth / 2, point.y + game.viewportHeight / 2, 1, 1)
+                  }
+                  context.globalAlpha = 1
+                }
               }
-              context.stroke()
-              context.globalAlpha = 1
 
-              context.strokeStyle = theme.accent
-              context.globalAlpha = 0.35
-              context.lineWidth = 3
-              context.strokeRect(4, 4, game.worldWidth - 8, game.worldHeight - 8)
-              context.globalAlpha = 1
-              context.restore()
-
-              context.restore()
+              Canvas {
+                id: starsNearCanvas
+                width: game.worldWidth + game.viewportWidth
+                height: game.worldHeight + game.viewportHeight
+                x: -game.cameraX * game.parallaxNear
+                y: -game.cameraY * game.parallaxNear
+                Connections { target: game; function onStarsNearChanged() { starsNearCanvas.requestPaint() } }
+                onPaint: {
+                  var context = getContext("2d")
+                  context.fillStyle = theme.foreground
+                  for (var i = 0; i < game.starsNear.length; i++) {
+                    var point = game.starsNear[i]
+                    context.globalAlpha = 0.27
+                    context.fillRect(point.x + game.viewportWidth / 2, point.y + game.viewportHeight / 2, 1.6, 1.6)
+                  }
+                  context.globalAlpha = 1
+                }
+              }
             }
           }
 

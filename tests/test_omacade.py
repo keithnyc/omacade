@@ -704,24 +704,26 @@ class OmacadeTests(unittest.TestCase):
         # Enemies spawn relative to the player's viewport, not the (much larger) world edges.
         self.assertIn("function edgeSpawnPoint()", swarm)
         self.assertIn("var halfW = viewportWidth / 2 + margin", swarm)
-        # Background canvas repaints every tick now (camera-dependent), not on a slow timer.
-        self.assertIn("function drawStars(list, parallax, minAlpha, maxAlpha, size)", swarm)
-        self.assertIn("drawStars(game.starsFar, game.parallaxFar, 0.08, 0.22, 1)", swarm)
-        self.assertIn("drawStars(game.starsNear, game.parallaxNear, 0.16, 0.38, 1.6)", swarm)
-
-        # Perf fix: background repaints were tanking fps from the start of every run --
-        # a fresh-every-frame gradient, drawing all off-screen stars, and a full-world grid
-        # sweep every tick, all newly running at 60fps instead of the old 8fps timer.
-        self.assertIn("property var glowStyle: null", swarm)
-        self.assertIn("if (!glowStyle) {", swarm)
-        self.assertIn("if (sx < -margin || sx > game.viewportWidth + margin || sy < -margin || sy > game.viewportHeight + margin) continue", swarm)
-        self.assertIn("var gridStartX = Math.max(0, Math.floor((game.cameraX - game.viewportWidth / 2) / 60 - 1) * 60)", swarm)
-        self.assertIn("property int frameCounter: 0", swarm)
-        self.assertIn("if (frameCounter % 4 === 0) bgCanvas.requestPaint()", swarm)
-        # bgCanvas repaints the whole viewport every call -- threaded so that doesn't run
-        # synchronously on the GUI thread and stall frame delivery while panning.
-        self.assertIn("id: bgCanvas", swarm)
-        self.assertEqual(swarm.count("renderStrategy: Canvas.Threaded"), 2)
+        # Perf fix: redrawing the background (gradient, stars, grid) from scratch every time
+        # the camera moved made the whole viewport "dirty" every frame regardless of how cheap
+        # the individual draw calls were -- culling/caching/threading that redraw all failed to
+        # fix it (confirmed live: panning was janky, camera-frozen at world edges was smooth).
+        # Fix: bake each background layer to a raster once, then pan it via x/y position
+        # (a GPU transform on an existing texture, not a redraw).
+        self.assertIn("id: bgViewport", swarm)
+        self.assertIn("id: bgScaled", swarm)
+        self.assertIn("scale: bgViewport.width / game.viewportWidth", swarm)
+        self.assertIn("id: glowCanvas", swarm)
+        self.assertIn("id: worldLayerCanvas", swarm)
+        self.assertIn("id: starsFarCanvas", swarm)
+        self.assertIn("id: starsNearCanvas", swarm)
+        self.assertEqual(swarm.count("Component.onCompleted: requestPaint()"), 2)
+        self.assertIn("x: game.viewportWidth / 2 - game.cameraX", swarm)
+        self.assertIn("x: -game.cameraX * game.parallaxFar", swarm)
+        self.assertIn("x: -game.cameraX * game.parallaxNear", swarm)
+        self.assertIn("function onStarsFarChanged() { starsFarCanvas.requestPaint() }", swarm)
+        self.assertIn("function onStarsNearChanged() { starsNearCanvas.requestPaint() }", swarm)
+        self.assertNotIn("bgCanvas", swarm)
         self.assertIn("readonly property int maxOrbs: 260", swarm)
         self.assertIn("if (orbs.length > maxOrbs) orbs = orbs.slice(orbs.length - maxOrbs)", swarm)
 
