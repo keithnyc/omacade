@@ -705,10 +705,19 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("function edgeSpawnPoint()", swarm)
         self.assertIn("var halfW = viewportWidth / 2 + margin", swarm)
         # Background canvas repaints every tick now (camera-dependent), not on a slow timer.
-        self.assertIn("worldCanvas.requestPaint()\n          bgCanvas.requestPaint()", swarm)
         self.assertIn("function drawStars(list, parallax, minAlpha, maxAlpha, size)", swarm)
         self.assertIn("drawStars(game.starsFar, game.parallaxFar, 0.08, 0.22, 1)", swarm)
         self.assertIn("drawStars(game.starsNear, game.parallaxNear, 0.16, 0.38, 1.6)", swarm)
+
+        # Perf fix: background repaints were tanking fps from the start of every run --
+        # a fresh-every-frame gradient, drawing all off-screen stars, and a full-world grid
+        # sweep every tick, all newly running at 60fps instead of the old 8fps timer.
+        self.assertIn("property var glowStyle: null", swarm)
+        self.assertIn("if (!glowStyle) {", swarm)
+        self.assertIn("if (sx < -margin || sx > game.viewportWidth + margin || sy < -margin || sy > game.viewportHeight + margin) continue", swarm)
+        self.assertIn("var gridStartX = Math.max(0, Math.floor((game.cameraX - game.viewportWidth / 2) / 60 - 1) * 60)", swarm)
+        self.assertIn("property int frameCounter: 0", swarm)
+        self.assertIn("if (frameCounter % 2 === 0) bgCanvas.requestPaint()", swarm)
         self.assertIn("readonly property int maxOrbs: 260", swarm)
         self.assertIn("if (orbs.length > maxOrbs) orbs = orbs.slice(orbs.length - maxOrbs)", swarm)
 

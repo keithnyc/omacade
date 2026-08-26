@@ -1355,6 +1355,7 @@ ShellRoot {
         interval: 16
         repeat: true
         running: !game.tooSmall
+        property int frameCounter: 0
         onTriggered: {
           var now = Date.now()
           var dt = Math.max(0.001, Math.min(0.05, (now - game.lastTickMs) / 1000))
@@ -1365,7 +1366,11 @@ ShellRoot {
             if (game.waveTransitionLife <= 0) game.mode = "playing"
           }
           worldCanvas.requestPaint()
-          bgCanvas.requestPaint()
+          // Background (grid/stars/glow) only needs to keep up with camera panning, not
+          // per-entity motion -- repainting it at ~30fps instead of 60fps is imperceptible
+          // here and halves its share of per-frame cost.
+          frameCounter += 1
+          if (frameCounter % 2 === 0) bgCanvas.requestPaint()
         }
       }
 
@@ -1423,8 +1428,9 @@ ShellRoot {
             anchors.centerIn: parent
             width: Math.min(parent.width, parent.height * game.worldAspect)
             height: width / game.worldAspect
-            onWidthChanged: requestPaint()
-            onHeightChanged: requestPaint()
+            property var glowStyle: null
+            onWidthChanged: { glowStyle = null; requestPaint() }
+            onHeightChanged: { glowStyle = null; requestPaint() }
             onPaint: {
               var context = getContext("2d")
               context.reset()
@@ -1437,19 +1443,32 @@ ShellRoot {
 
               // Ambient glow stays centered on the viewport, not the world -- reads as a
               // constant "torchlight" around the player instead of one fixed bright spot
-              // somewhere in the much larger arena.
-              var glow = context.createRadialGradient(game.viewportWidth / 2, game.viewportHeight / 2, 40,
-                                                        game.viewportWidth / 2, game.viewportHeight / 2, game.viewportWidth * 0.72)
-              glow.addColorStop(0, theme.surface)
-              glow.addColorStop(1, theme.background)
-              context.fillStyle = glow
+              // somewhere in the much larger arena. Cached: it never changes shape/color,
+              // so building it fresh every frame was pure waste.
+              if (!glowStyle) {
+                glowStyle = context.createRadialGradient(game.viewportWidth / 2, game.viewportHeight / 2, 40,
+                                                           game.viewportWidth / 2, game.viewportHeight / 2, game.viewportWidth * 0.72)
+                glowStyle.addColorStop(0, theme.surface)
+                glowStyle.addColorStop(1, theme.background)
+              }
+              context.fillStyle = glowStyle
               context.fillRect(0, 0, game.viewportWidth, game.viewportHeight)
 
+              // Only draw stars actually inside (or just outside) the visible viewport --
+              // both layers are generated across a much larger area than ever shows on
+              // screen at once (needed so parallax scrolling never runs out of stars),
+              // so drawing the full list every frame was mostly wasted fillRect calls.
               function drawStars(list, parallax, minAlpha, maxAlpha, size) {
+                var offX = game.viewportWidth / 2 - game.cameraX * parallax
+                var offY = game.viewportHeight / 2 - game.cameraY * parallax
+                var margin = 20
                 context.save()
-                context.translate(game.viewportWidth / 2 - game.cameraX * parallax, game.viewportHeight / 2 - game.cameraY * parallax)
+                context.translate(offX, offY)
                 for (var i = 0; i < list.length; i++) {
                   var point = list[i]
+                  var sx = point.x + offX
+                  var sy = point.y + offY
+                  if (sx < -margin || sx > game.viewportWidth + margin || sy < -margin || sy > game.viewportHeight + margin) continue
                   context.globalAlpha = minAlpha + (maxAlpha - minAlpha) * (0.5 + 0.5 * Math.sin(game.animationTime * 1.6 + point.phase))
                   context.fillStyle = theme.foreground
                   context.fillRect(point.x, point.y, size, size)
@@ -1463,15 +1482,21 @@ ShellRoot {
               context.save()
               context.translate(game.viewportWidth / 2 - game.cameraX, game.viewportHeight / 2 - game.cameraY)
 
+              // Grid lines: only draw the span actually inside the viewport (+1 line of
+              // margin) instead of the whole (much bigger) world every frame.
+              var gridStartX = Math.max(0, Math.floor((game.cameraX - game.viewportWidth / 2) / 60 - 1) * 60)
+              var gridEndX = Math.min(game.worldWidth, Math.ceil((game.cameraX + game.viewportWidth / 2) / 60 + 1) * 60)
+              var gridStartY = Math.max(0, Math.floor((game.cameraY - game.viewportHeight / 2) / 60 - 1) * 60)
+              var gridEndY = Math.min(game.worldHeight, Math.ceil((game.cameraY + game.viewportHeight / 2) / 60 + 1) * 60)
               context.strokeStyle = theme.muted
               context.globalAlpha = 0.08
               context.lineWidth = 1
               context.beginPath()
-              for (var gridX = 0; gridX <= game.worldWidth; gridX += 60) {
-                context.moveTo(gridX, 0); context.lineTo(gridX, game.worldHeight)
+              for (var gridX = gridStartX; gridX <= gridEndX; gridX += 60) {
+                context.moveTo(gridX, gridStartY); context.lineTo(gridX, gridEndY)
               }
-              for (var gridY = 0; gridY <= game.worldHeight; gridY += 60) {
-                context.moveTo(0, gridY); context.lineTo(game.worldWidth, gridY)
+              for (var gridY = gridStartY; gridY <= gridEndY; gridY += 60) {
+                context.moveTo(gridStartX, gridY); context.lineTo(gridEndX, gridY)
               }
               context.stroke()
               context.globalAlpha = 1
