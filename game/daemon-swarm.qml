@@ -790,11 +790,11 @@ ShellRoot {
       }
 
       function updateCamera(dt) {
-        var targetX = Math.max(viewportWidth / 2, Math.min(worldWidth - viewportWidth / 2, playerX))
-        var targetY = Math.max(viewportHeight / 2, Math.min(worldHeight - viewportHeight / 2, playerY))
-        var followRate = Math.min(1, dt * 8)
-        cameraX += (targetX - cameraX) * followRate
-        cameraY += (targetY - cameraY) * followRate
+        // Rigid, instant follow -- this is a fast twin-stick-style shooter where the player
+        // can move very quickly (stacked speed upgrades), so any eased/lagging camera reads
+        // as sluggish input response rather than a cinematic touch.
+        cameraX = Math.max(viewportWidth / 2, Math.min(worldWidth - viewportWidth / 2, playerX))
+        cameraY = Math.max(viewportHeight / 2, Math.min(worldHeight - viewportHeight / 2, playerY))
       }
 
       function hasMagnetOrb() {

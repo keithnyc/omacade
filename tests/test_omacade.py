@@ -700,7 +700,7 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("property real cameraX: worldWidth / 2", swarm)
         self.assertIn("property real cameraY: worldHeight / 2", swarm)
         self.assertIn("function updateCamera(dt)", swarm)
-        self.assertIn("var followRate = Math.min(1, dt * 8)", swarm)
+        self.assertIn("cameraX = Math.max(viewportWidth / 2, Math.min(worldWidth - viewportWidth / 2, playerX))", swarm)
         # Enemies spawn relative to the player's viewport, not the (much larger) world edges.
         self.assertIn("function edgeSpawnPoint()", swarm)
         self.assertIn("var halfW = viewportWidth / 2 + margin", swarm)
