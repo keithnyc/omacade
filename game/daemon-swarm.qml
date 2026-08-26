@@ -59,19 +59,30 @@ ShellRoot {
       readonly property int mineMaxLevel: 8
       readonly property int turretMaxLevel: 8
       readonly property int catalystMaxLevel: 10
-      readonly property int mineCap: 2 + mineCapBonus
+      // Unlike the thresholds above, these ARE hard caps -- they bound how many simultaneous
+      // bolts/mines/turrets can exist at once, which is what actually drives per-frame cost.
+      // Uncapped, a long run turns hundreds of overlapping O(enemies) hit-scans into single-digit fps.
+      readonly property int burstMultiCap: 6
+      readonly property int burstSpreadCap: 6
+      readonly property int mineCapBonusMax: 6
+      readonly property int mineCap: 2 + Math.min(mineCapBonus, mineCapBonusMax)
       readonly property int turretCap: Math.min(6, 1 + Math.floor(turretLevel / 2))
       readonly property real slowAuraRadius: 70 + slowAuraLevel * 22
       readonly property string alertLevel: wave < 4 ? "LOW" : wave < 8 ? "ELEVATED" : wave < 14 ? "SEVERE" : "CRITICAL"
       readonly property color alertColor: alertLevel === "LOW" ? theme.green : alertLevel === "ELEVATED" ? theme.yellow : alertLevel === "SEVERE" ? theme.orange : theme.red
-      readonly property int xpToNext: 6 + level * 4
+      // XP cost compounds past level 30 so a snowballing build can't chain level-ups every
+      // 1-2 seconds forever -- the interrupt-every-second problem reported at wave 90+.
+      readonly property real levelHardening: Math.pow(1.05, Math.max(0, level - 30))
+      readonly property int xpToNext: Math.round((6 + level * 4) * levelHardening)
       readonly property int waveKillTarget: 8 + wave * 5
       readonly property real pickupRadius: 62 + pickupBonus * 16
       readonly property real moveSpeed: 190 * (1 + speedBonus * 0.15)
-      readonly property real waveHardening: Math.pow(1.025, Math.max(0, wave - 25))
+      // Hardening now kicks in earlier (wave 15) and compounds faster so builds face rising
+      // resistance well before the extreme late game, instead of coasting until wave 25+.
+      readonly property real waveHardening: Math.pow(1.03, Math.max(0, wave - 15))
       readonly property real enemySpeedMul: 1 + Math.min(3.2, wave * 0.07)
       readonly property real enemyHpMul: (1 + wave * 0.1) * waveHardening
-      readonly property real enemyDamageMul: (1 + wave * 0.03) * Math.pow(1.012, Math.max(0, wave - 25))
+      readonly property real enemyDamageMul: (1 + wave * 0.03) * Math.pow(1.015, Math.max(0, wave - 15))
 
       property string mode: "attract"
       property string modeBeforeScores: "attract"
@@ -793,7 +804,7 @@ ShellRoot {
         if (invulnerable > 0 || mode !== "playing") return
         if (ringEvolved) amount = Math.max(1, amount - 1)
         hp -= amount
-        invulnerable = 0.9 + shieldBonus * 0.15
+        invulnerable = 0.9 + Math.min(shieldBonus, 8) * 0.15
         damageFlash = 0.4
         spawnShake(9, 0.26)
         shell.play(hurtSound)
@@ -971,12 +982,12 @@ ShellRoot {
         if (orbitLevel > 0) pool.push({ id: "orbit-range-up", title: "ORBIT EXPANSE", detail: "Patch Orbit: shards orbit further out." })
         if (chainLevel > 0) pool.push({ id: "chain-up", title: "ARC OVERCLOCK", detail: "Traceroute Arc: +damage, +1 jump, faster pulse." })
         if (mineLevel > 0) pool.push({ id: "mine-up", title: "MINE OVERCLOCK", detail: "Honeypot Mine: +blast radius, +damage, faster redeploy." })
-        if (mineLevel > 0) pool.push({ id: "mine-cap-up", title: "EXPANDED PAYLOAD", detail: "Honeypot Mine: +1 max deployed at once." })
+        if (mineLevel > 0 && mineCapBonus < mineCapBonusMax) pool.push({ id: "mine-cap-up", title: "EXPANDED PAYLOAD", detail: "Honeypot Mine: +1 max deployed at once." })
         if (mineLevel > 0 && !mineCascade && !mineEvolved) pool.push({ id: "mine-cascade", title: "CASCADE TRIGGER", detail: "Honeypot Mine: blasts also detonate nearby mines." })
         if (turretLevel > 0) pool.push({ id: "turret-up", title: "TURRET OVERCLOCK", detail: "Auto-Turret: +damage, +range, faster fire and redeploy." })
         pool.push({ id: "burst-up", title: "PACKET OVERCLOCK", detail: "Packet Burst: faster fire, +pierce, +damage." })
-        pool.push({ id: "burst-multi-up", title: "PACKET FORK", detail: "Packet Burst: +1 simultaneous target." })
-        pool.push({ id: "burst-spread-up", title: "SPREAD ROUTING", detail: "Packet Burst: +2 angled bolts per shot." })
+        if (burstMultiLevel < burstMultiCap) pool.push({ id: "burst-multi-up", title: "PACKET FORK", detail: "Packet Burst: +1 simultaneous target." })
+        if (burstSpreadLevel < burstSpreadCap) pool.push({ id: "burst-spread-up", title: "SPREAD ROUTING", detail: "Packet Burst: +2 angled bolts per shot." })
         pool.push({ id: "speed-up", title: "IO BOOST", detail: "+15% movement speed." })
         pool.push({ id: "hp-up", title: "INTEGRITY PATCH", detail: "+1 max integrity, heal 1." })
         pool.push({ id: "pickup-up", title: "WIDE SCAN", detail: "+ pickup radius for stray packets." })

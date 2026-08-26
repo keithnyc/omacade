@@ -560,9 +560,9 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("function completeWave()", swarm)
         self.assertIn("function rollWaveReward()", swarm)
         self.assertIn("readonly property int waveKillTarget: 8 + wave * 5", swarm)
-        self.assertIn("readonly property real waveHardening: Math.pow(1.025, Math.max(0, wave - 25))", swarm)
+        self.assertIn("readonly property real waveHardening: Math.pow(1.03, Math.max(0, wave - 15))", swarm)
         self.assertIn("readonly property real enemyHpMul: (1 + wave * 0.1) * waveHardening", swarm)
-        self.assertIn("readonly property real enemyDamageMul: (1 + wave * 0.03) * Math.pow(1.012, Math.max(0, wave - 25))", swarm)
+        self.assertIn("readonly property real enemyDamageMul: (1 + wave * 0.03) * Math.pow(1.015, Math.max(0, wave - 15))", swarm)
         self.assertIn('mode === "wavecomplete"', swarm)
         self.assertNotIn("Math.min(4, ringLevel", swarm)
         self.assertNotIn("Math.min(5, burstLevel", swarm)
@@ -674,6 +674,20 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("for (var s = 0; s < orbitShardCount; s++)", swarm)
         self.assertIn("readonly property int turretCap: Math.min(6, 1 + Math.floor(turretLevel / 2))", swarm)
         self.assertIn("if (t.life >= t.maxLife) {", swarm)
+
+        # Playtest to wave ~100 hit single-digit fps and a level-up every 1-2s from a runaway
+        # snowball: uncapped simultaneous bolts/mines/shield duration + a flat XP curve.
+        # These hard caps bound per-frame entity count without capping raw damage/level growth.
+        self.assertIn("readonly property int burstMultiCap: 6", swarm)
+        self.assertIn("readonly property int burstSpreadCap: 6", swarm)
+        self.assertIn("readonly property int mineCapBonusMax: 6", swarm)
+        self.assertIn("readonly property int mineCap: 2 + Math.min(mineCapBonus, mineCapBonusMax)", swarm)
+        self.assertIn("if (burstMultiLevel < burstMultiCap) pool.push({ id: \"burst-multi-up\"", swarm)
+        self.assertIn("if (burstSpreadLevel < burstSpreadCap) pool.push({ id: \"burst-spread-up\"", swarm)
+        self.assertIn("if (mineLevel > 0 && mineCapBonus < mineCapBonusMax) pool.push({ id: \"mine-cap-up\"", swarm)
+        self.assertIn("invulnerable = 0.9 + Math.min(shieldBonus, 8) * 0.15", swarm)
+        self.assertIn("readonly property real levelHardening: Math.pow(1.05, Math.max(0, level - 30))", swarm)
+        self.assertIn("readonly property int xpToNext: Math.round((6 + level * 4) * levelHardening)", swarm)
 
         for effect in ("launch", "hit", "levelup", "hurt", "death"):
             wav = (ROOT / "game" / "assets" / "sfx" / f"swarm-{effect}.wav").read_bytes()
