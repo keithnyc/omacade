@@ -306,12 +306,28 @@ ShellRoot {
                  speed: profile.speed * enemySpeedMul, radius: profile.radius,
                  damage: profile.damage + Math.floor(wave / 15),
                  xp: profile.xp, score: profile.score, colorKey: profile.color, hitFlash: 0,
-                 orbitCooldown: 0 }
+                 orbitCooldown: 0, modifier: null }
       }
 
       function spawnEnemyAt(type, pos) {
         if (enemies.length >= maxEnemies) return
         enemies = enemies.concat([makeEnemy(type, pos)])
+      }
+
+      function eliteModifierPool() {
+        return ["shielded", "fast", "volatile"]
+      }
+
+      function spawnElite(type, pos) {
+        if (enemies.length >= maxEnemies) return null
+        var enemy = makeEnemy(type, pos)
+        if (Math.random() < 0.65) {
+          var mods = eliteModifierPool()
+          enemy.modifier = mods[Math.floor(Math.random() * mods.length)]
+          if (enemy.modifier === "fast") enemy.speed *= 1.55
+        }
+        enemies = enemies.concat([enemy])
+        return enemy
       }
 
       function nearestEnemy() {
@@ -354,10 +370,21 @@ ShellRoot {
 
       function applyDamage(target, base, flashDuration) {
         var amount = rollDamage(base)
+        if (target.modifier === "shielded") amount = Math.max(1, Math.round(amount * 0.6))
         target.hp -= amount
         target.hitFlash = flashDuration || 0.12
         spawnDamageNumber(target.x, target.y, amount, amount > base)
         return amount
+      }
+
+      function triggerVolatileDeath(e) {
+        var blastRadius = 70
+        var dx = playerX - e.x, dy = playerY - e.y
+        var dist = Math.sqrt(dx * dx + dy * dy)
+        spawnBurst(e.x, e.y, "red", 34, 260, 0.6)
+        spawnPop(e.x, e.y, "red", blastRadius, 0.45)
+        spawnShake(7, 0.22)
+        if (dist < blastRadius) damagePlayer(2)
       }
 
       function fireBurst() {
@@ -540,11 +567,33 @@ ShellRoot {
         playerY = Math.max(playerRadius, Math.min(worldHeight - playerRadius, playerY + dy * moveSpeed * dt))
       }
 
+      function hasMagnetOrb() {
+        for (var i = 0; i < orbs.length; i++) if (orbs[i].kind === "magnet") return true
+        return false
+      }
+
+      function dropLoot(e) {
+        var updated = orbs.slice(0)
+        if (e.type === "rootkit" || e.type === "boss") {
+          var lootCount = e.type === "boss" ? 8 : 4
+          var perOrb = Math.max(1, Math.round((e.xp * 1.5) / lootCount))
+          for (var i = 0; i < lootCount; i++) {
+            var ang = Math.random() * Math.PI * 2
+            var dist = 10 + Math.random() * 34
+            updated.push({ x: e.x + Math.cos(ang) * dist, y: e.y + Math.sin(ang) * dist, value: perOrb, kind: "xp" })
+          }
+        } else {
+          updated.push({ x: e.x, y: e.y, value: e.xp, kind: "xp" })
+        }
+        orbs = updated
+        if (!hasMagnetOrb() && Math.random() < 0.015) {
+          orbs = orbs.concat([{ x: e.x + (Math.random() - 0.5) * 40, y: e.y + (Math.random() - 0.5) * 40, value: 0, kind: "magnet" }])
+        }
+      }
+
       function killRewards(e) {
         score += e.score
-        var updatedOrbs = orbs.slice(0)
-        updatedOrbs.push({ x: e.x, y: e.y, value: e.xp })
-        orbs = updatedOrbs
+        dropLoot(e)
         if (e.type === "rootkit" || e.type === "boss") {
           statusMessage = (e.type === "boss" ? "MINI-BOSS PURGED // +" : "ROOTKIT PURGED // +") + e.score
           spawnBurst(e.x, e.y, e.colorKey, 46, 260, 0.8)
@@ -658,6 +707,7 @@ ShellRoot {
             kills += 1
             waveKills += 1
             if (e.type === "rootkit" || e.type === "boss") elites += 1
+            if (e.modifier === "volatile") triggerVolatileDeath(e)
             if (e.type === "fork") {
               spawnQueue.push({ x: e.x, y: e.y })
               spawnQueue.push({ x: e.x, y: e.y })
@@ -679,8 +729,22 @@ ShellRoot {
         enemies = survivors
       }
 
+      function triggerMagnetBurst() {
+        var total = 0
+        for (var i = 0; i < orbs.length; i++) total += orbs[i].value + xpBonus
+        var count = orbs.length
+        orbs = []
+        spawnBurst(playerX, playerY, "accent", 36, 300, 0.6)
+        spawnBurst(playerX, playerY, "yellow", 20, 260, 0.5)
+        spawnPop(playerX, playerY, "accent", 150, 0.55)
+        shell.play(levelSound)
+        statusMessage = count > 0 ? "MAGNET PACKET // " + count + " PACKETS COLLECTED" : "MAGNET PACKET ACTIVATED"
+        if (total > 0) gainXp(total)
+      }
+
       function updateOrbs(dt) {
         var active = []
+        var magnetHit = false
         for (var i = 0; i < orbs.length; i++) {
           var orb = orbs[i]
           var dx = playerX - orb.x
@@ -691,9 +755,10 @@ ShellRoot {
             var pull = Math.min(dist, (300 + pullStrength * 520) * dt)
             orb.x += dx / dist * pull
             orb.y += dy / dist * pull
-            if (Math.random() < 0.4) spawnBurst(orb.x, orb.y, "yellow", 1, 30, 0.18)
+            if (Math.random() < 0.4) spawnBurst(orb.x, orb.y, orb.kind === "magnet" ? "accent" : "yellow", 1, 30, 0.18)
           }
           if (dist < 16) {
+            if (orb.kind === "magnet") { magnetHit = true; continue }
             spawnBurst(orb.x, orb.y, "yellow", 18, 220, 0.42)
             spawnPop(orb.x, orb.y, "yellow", 26, 0.22)
             gainXp(orb.value + xpBonus)
@@ -702,6 +767,7 @@ ShellRoot {
           active.push(orb)
         }
         orbs = active
+        if (magnetHit) triggerMagnetBurst()
       }
 
       function gainXp(amount) {
@@ -855,14 +921,15 @@ ShellRoot {
           eliteWarning -= dt
           if (eliteWarning <= 0) {
             var isBoss = wave >= 10 && wave % 5 === 0 && lastBossWave !== wave
-            spawnEnemyAt(isBoss ? "boss" : "rootkit", eliteWarningPos)
+            var spawned = spawnElite(isBoss ? "boss" : "rootkit", eliteWarningPos)
+            var modTag = spawned && spawned.modifier ? " // " + spawned.modifier.toUpperCase() : ""
             if (isBoss) {
               lastBossWave = wave
-              statusMessage = "MINI-BOSS BREACH // DAEMON ENGAGED"
+              statusMessage = "MINI-BOSS BREACH" + modTag + " // DAEMON ENGAGED"
               spawnShake(10, 0.4)
               spawnBurst(eliteWarningPos.x, eliteWarningPos.y, "red", 40, 260, 0.7)
               spawnPop(eliteWarningPos.x, eliteWarningPos.y, "red", 120, 0.6)
-            } else statusMessage = "ROOTKIT BREACH // ELITE ENGAGED"
+            } else statusMessage = "ROOTKIT BREACH" + modTag + " // ELITE ENGAGED"
           }
           return
         }
@@ -1162,9 +1229,24 @@ ShellRoot {
 
               for (var oi = 0; oi < game.orbs.length; oi++) {
                 var orb = game.orbs[oi]
-                context.globalAlpha = 0.5 + 0.3 * Math.sin(game.animationTime * 6 + oi)
-                context.fillStyle = theme.yellow
-                context.beginPath(); context.arc(orb.x, orb.y, 5, 0, Math.PI * 2); context.fill()
+                if (orb.kind === "magnet") {
+                  var magPulse = 7 + 3 * Math.sin(game.animationTime * 8 + oi)
+                  context.globalAlpha = 0.28
+                  context.strokeStyle = theme.accent
+                  context.lineWidth = 6
+                  context.beginPath(); context.arc(orb.x, orb.y, magPulse + 6, 0, Math.PI * 2); context.stroke()
+                  context.globalAlpha = 0.95
+                  context.fillStyle = theme.accent
+                  context.beginPath(); context.arc(orb.x, orb.y, magPulse, 0, Math.PI * 2); context.fill()
+                  context.globalAlpha = 1
+                  context.strokeStyle = theme.foreground
+                  context.lineWidth = 1.6
+                  context.beginPath(); context.arc(orb.x, orb.y, magPulse, 0, Math.PI * 2); context.stroke()
+                } else {
+                  context.globalAlpha = 0.5 + 0.3 * Math.sin(game.animationTime * 6 + oi)
+                  context.fillStyle = theme.yellow
+                  context.beginPath(); context.arc(orb.x, orb.y, 5, 0, Math.PI * 2); context.fill()
+                }
               }
               context.globalAlpha = 1
 
@@ -1230,11 +1312,31 @@ ShellRoot {
                   context.beginPath(); context.arc(0, 0, en.radius * 0.55, 0, Math.PI * 2); context.stroke()
                 }
                 context.restore()
+                if (en.modifier === "shielded") {
+                  context.globalAlpha = 0.55
+                  context.strokeStyle = theme.accent
+                  context.lineWidth = 2.4
+                  context.beginPath(); context.arc(en.x, en.y, en.radius + 7, 0, Math.PI * 2); context.stroke()
+                  context.globalAlpha = 1
+                } else if (en.modifier === "fast") {
+                  context.globalAlpha = 0.4
+                  context.strokeStyle = theme.yellow
+                  context.lineWidth = 1.6
+                  context.beginPath(); context.arc(en.x, en.y, en.radius + 5, 0, Math.PI * 2); context.stroke()
+                  context.globalAlpha = 1
+                } else if (en.modifier === "volatile") {
+                  context.globalAlpha = 0.35 + 0.35 * Math.sin(game.animationTime * 10)
+                  context.strokeStyle = theme.red
+                  context.lineWidth = 2.2
+                  context.beginPath(); context.arc(en.x, en.y, en.radius + 6, 0, Math.PI * 2); context.stroke()
+                  context.globalAlpha = 1
+                }
                 if (en.type === "rootkit" || en.type === "boss") {
                   context.fillStyle = theme.foreground
                   context.font = "bold 9px monospace"
                   context.textAlign = "center"
-                  context.fillText(Math.max(0, en.hp) + "/" + en.maxHp, en.x, en.y - en.radius - 8)
+                  var modTag = en.modifier ? " " + en.modifier.toUpperCase() : ""
+                  context.fillText(Math.max(0, en.hp) + "/" + en.maxHp + modTag, en.x, en.y - en.radius - 8)
                 }
               }
               context.globalAlpha = 1
@@ -1487,6 +1589,7 @@ ShellRoot {
               Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; text: "A ROGUE PROCESS SWARM IS SPREADING. CLEAR EACH WAVE'S KILL QUOTA TO ADVANCE.\nCOLLECT PACKETS TO LEVEL UP AND CHOOSE NEW DEFENSES."; color: theme.foreground; font.pixelSize: 14; font.family: "monospace"; lineHeight: 1.3 }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "AUTO-FIRE TARGETS THE NEAREST THREAT  ·  CLEARING A WAVE BANKS A FREE REWARD"; color: theme.green; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "FORKS SPLIT ON DEATH  ·  ROOTKIT ELITES FROM WAVE 6  ·  MINI-BOSSES FROM WAVE 10"; color: theme.orange; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "ELITES CAN BE SHIELDED, FAST, OR VOLATILE  ·  RARE MAGNET PACKETS SWEEP THE FIELD"; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "← ↑ ↓ → / WASD MOVE"; color: theme.muted; font.pixelSize: 11; font.family: "monospace" }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "BEST " + arcadeData.bestScore + "   ·   FURTHEST WAVE " + arcadeData.highestStage; color: theme.yellow; font.pixelSize: 13; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "PRESS ENTER TO BOOT"; color: theme.accent; font.pixelSize: 18; font.family: "monospace"; font.bold: true

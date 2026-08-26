@@ -585,6 +585,21 @@ class OmacadeTests(unittest.TestCase):
             self.assertIn(f'id === "{upgrade_id}"', swarm)
         self.assertIn("function rollDamage(base)", swarm)
 
+        # Elite modifiers: shielded/fast/volatile rolled on rootkit/boss spawns only.
+        self.assertIn("function spawnElite(type, pos)", swarm)
+        self.assertIn('return ["shielded", "fast", "volatile"]', swarm)
+        self.assertIn('if (target.modifier === "shielded") amount = Math.max(1, Math.round(amount * 0.6))', swarm)
+        self.assertIn("function triggerVolatileDeath(e)", swarm)
+        self.assertIn('if (e.modifier === "volatile") triggerVolatileDeath(e)', swarm)
+        self.assertIn('spawnElite(isBoss ? "boss" : "rootkit", eliteWarningPos)', swarm)
+
+        # Elites drop multiple loot packets; kills roll a rare magnet pickup that sweeps the field.
+        self.assertIn("function dropLoot(e)", swarm)
+        self.assertIn("var lootCount = e.type === \"boss\" ? 8 : 4", swarm)
+        self.assertIn("function hasMagnetOrb()", swarm)
+        self.assertIn("function triggerMagnetBurst()", swarm)
+        self.assertIn('orb.kind === "magnet"', swarm)
+
         for effect in ("launch", "hit", "levelup", "hurt", "death"):
             wav = (ROOT / "game" / "assets" / "sfx" / f"swarm-{effect}.wav").read_bytes()
             self.assertEqual(wav[:4], b"RIFF")
