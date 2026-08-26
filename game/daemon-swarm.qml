@@ -54,6 +54,15 @@ ShellRoot {
       readonly property real parallaxFar: 0.35
       readonly property real parallaxNear: 0.65
       readonly property int maxOrbs: 260
+      // Points of interest scattered across the (much bigger) world -- give exploration an
+      // actual payoff instead of the map just being empty space between fights.
+      readonly property real lairWakeRadius: 130
+      readonly property real relayCaptureRadius: 70
+      readonly property real relayCaptureTime: 4
+      readonly property real relayRange: 220
+      readonly property int relayDamage: 8
+      readonly property real relayFireInterval: 0.6
+      readonly property real backupTouchRadius: 40
       readonly property real orbitRadius: 58 + orbitRangeLevel * 16
       readonly property real orbitSpin: orbitEvolved ? 5.4 : 3.1
       readonly property int orbitDamage: 1 + orbitLevel + (orbitEvolved ? 2 : 0)
@@ -158,6 +167,7 @@ ShellRoot {
       readonly property int maxParticles: 200
       readonly property int maxDamageNumbers: 60
       property var enemies: []
+      property var pois: []
       property var orbs: []
       property var bolts: []
       property var rings: []
@@ -356,6 +366,7 @@ ShellRoot {
         eliteCooldown = 30
         eliteWarning = 0
         enemies = []
+        pois = generatePois()
         orbs = []
         bolts = []
         rings = []
@@ -425,6 +436,117 @@ ShellRoot {
         return { x: Math.max(10, Math.min(worldWidth - 10, x)), y: Math.max(10, Math.min(worldHeight - 10, y)) }
       }
 
+      function generatePois() {
+        var generated = []
+        var poiId = 0
+        function randomPoiPos() {
+          var x = 0, y = 0, tries = 0, ddx = 0, ddy = 0
+          do {
+            x = 100 + Math.random() * (worldWidth - 200)
+            y = 100 + Math.random() * (worldHeight - 200)
+            ddx = x - worldWidth / 2
+            ddy = y - worldHeight / 2
+            tries += 1
+          } while (tries < 20 && (ddx * ddx + ddy * ddy) < 350 * 350)
+          return { x: x, y: y }
+        }
+        for (var i = 0; i < 4; i++) {
+          var lp = randomPoiPos()
+          generated.push({ id: poiId, type: "lair", x: lp.x, y: lp.y, state: "dormant" })
+          poiId += 1
+        }
+        for (var r = 0; r < 3; r++) {
+          var rp = randomPoiPos()
+          generated.push({ id: poiId, type: "relay", x: rp.x, y: rp.y, state: "neutral", captureProgress: 0, fireCooldown: 0 })
+          poiId += 1
+        }
+        for (var b = 0; b < 3; b++) {
+          var bp = randomPoiPos()
+          generated.push({ id: poiId, type: "backup", x: bp.x, y: bp.y, state: "idle" })
+          poiId += 1
+        }
+        return generated
+      }
+
+      function resolveLairKill(e) {
+        for (var i = 0; i < pois.length; i++) {
+          if (pois[i].id === e.lairId) { pois[i].state = "done"; break }
+        }
+        if (!hasMagnetOrb()) orbs = orbs.concat([{ x: e.x, y: e.y, value: 0, kind: "magnet" }])
+        statusMessage = "LAIR CLEARED // MAGNET PACKET RELEASED"
+      }
+
+      function updatePois(dt) {
+        if (pois.length === 0) return
+        for (var i = 0; i < pois.length; i++) {
+          var poi = pois[i]
+          var dx = playerX - poi.x, dy = playerY - poi.y
+          var dist = Math.sqrt(dx * dx + dy * dy)
+          if (poi.type === "lair" && poi.state === "dormant") {
+            if (dist < lairWakeRadius) {
+              var lairType = (wave >= 15 && Math.random() < 0.3) ? bossTypePool()[Math.floor(Math.random() * bossTypePool().length)] : "rootkit"
+              var lairEnemy = spawnElite(lairType, { x: poi.x, y: poi.y })
+              if (lairEnemy) {
+                lairEnemy.lairId = poi.id
+                poi.state = "active"
+                statusMessage = "ROOTKIT LAIR BREACHED // DAEMON ENGAGED"
+                spawnShake(8, 0.3)
+                spawnBurst(poi.x, poi.y, "red", 30, 220, 0.6)
+                spawnPop(poi.x, poi.y, "red", 90, 0.5)
+              }
+            }
+          } else if (poi.type === "relay") {
+            if (poi.state === "neutral") {
+              if (dist < relayCaptureRadius) {
+                poi.captureProgress = Math.min(relayCaptureTime, poi.captureProgress + dt)
+                if (Math.random() < 0.5) spawnBurst(poi.x, poi.y, "accent", 1, 60, 0.2)
+                if (poi.captureProgress >= relayCaptureTime) {
+                  poi.state = "captured"
+                  poi.fireCooldown = 0.3
+                  statusMessage = "SIGNAL RELAY CAPTURED // AUTO-DEFENSE ONLINE"
+                  spawnBurst(poi.x, poi.y, "accent", 40, 260, 0.7)
+                  spawnPop(poi.x, poi.y, "accent", 120, 0.55)
+                  spawnShake(6, 0.25)
+                  shell.play(levelSound)
+                }
+              } else if (poi.captureProgress > 0) {
+                poi.captureProgress = Math.max(0, poi.captureProgress - dt * 0.5)
+              }
+            } else if (poi.state === "captured") {
+              poi.fireCooldown -= dt
+              if (poi.fireCooldown <= 0) {
+                var target = null
+                var bestD = relayRange * relayRange
+                for (var j = 0; j < enemies.length; j++) {
+                  var cand = enemies[j]
+                  var cdx = cand.x - poi.x, cdy = cand.y - poi.y
+                  var cd = cdx * cdx + cdy * cdy
+                  if (cd < bestD) { bestD = cd; target = cand }
+                }
+                if (target) {
+                  applyDamage(target, relayDamage, 0.14)
+                  var updatedBeams = beams.slice(0)
+                  updatedBeams.push({ x1: poi.x, y1: poi.y, x2: target.x, y2: target.y, life: 0, duration: 0.14 })
+                  beams = updatedBeams
+                  shell.play(hitSound)
+                }
+                poi.fireCooldown = relayFireInterval
+              }
+            }
+          } else if (poi.type === "backup" && poi.state === "idle") {
+            if (dist < backupTouchRadius) {
+              hp = maxHp
+              maxHp += 1
+              poi.state = "done"
+              statusMessage = "BACKUP SERVER // INTEGRITY RESTORED, MAX +1"
+              spawnBurst(poi.x, poi.y, "green", 34, 240, 0.6)
+              spawnPop(poi.x, poi.y, "green", 90, 0.5)
+              shell.play(levelSound)
+            }
+          }
+        }
+      }
+
       function makeEnemy(type, pos) {
         var profile = enemyProfile(type)
         enemySerial += 1
@@ -433,7 +555,7 @@ ShellRoot {
                  speed: profile.speed * enemySpeedMul, radius: profile.radius,
                  damage: Math.max(profile.damage, Math.round(profile.damage * enemyDamageMul)),
                  xp: profile.xp, score: profile.score, colorKey: profile.color, hitFlash: 0,
-                 orbitCooldown: 0, modifier: null }
+                 orbitCooldown: 0, modifier: null, lairId: null }
       }
 
       function spawnEnemyAt(type, pos) {
@@ -943,6 +1065,7 @@ ShellRoot {
             waveKills += 1
             if (e.type === "rootkit" || isBossType(e.type)) elites += 1
             if (e.modifier === "volatile") triggerVolatileDeath(e)
+            if (e.lairId) resolveLairKill(e)
             if (e.type === "fork") {
               spawnQueue.push({ x: e.x, y: e.y })
               spawnQueue.push({ x: e.x, y: e.y })
@@ -1284,6 +1407,7 @@ ShellRoot {
         if (mode !== "playing") return
         updateSpawns(dt)
         updateElite(dt)
+        updatePois(dt)
       }
 
       Keys.onPressed: function(event) {
@@ -1558,6 +1682,75 @@ ShellRoot {
                 context.beginPath(); context.arc(game.eliteWarningPos.x, game.eliteWarningPos.y, warnPulse, 0, Math.PI * 2); context.stroke()
                 context.globalAlpha = 1
               }
+
+              for (var pi = 0; pi < game.pois.length; pi++) {
+                var poi = game.pois[pi]
+                if (poi.type === "lair" && poi.state === "dormant") {
+                  var lairPulse = 22 + 6 * Math.sin(game.animationTime * 2.4)
+                  context.globalAlpha = 0.5
+                  context.strokeStyle = theme.red
+                  context.lineWidth = 2.4
+                  context.beginPath(); context.arc(poi.x, poi.y, lairPulse, 0, Math.PI * 2); context.stroke()
+                  context.save()
+                  context.translate(poi.x, poi.y)
+                  context.rotate(game.animationTime * 0.4)
+                  context.globalAlpha = 0.85
+                  context.fillStyle = theme.red
+                  context.beginPath()
+                  for (var lx = 0; lx < 6; lx++) {
+                    var lAng = Math.PI / 3 * lx
+                    var lr = lx % 2 === 0 ? 12 : 7
+                    var lxp = Math.cos(lAng) * lr, lyp = Math.sin(lAng) * lr
+                    if (lx === 0) context.moveTo(lxp, lyp); else context.lineTo(lxp, lyp)
+                  }
+                  context.closePath(); context.fill()
+                  context.restore()
+                  context.globalAlpha = 1
+                } else if (poi.type === "relay" && poi.state !== "done") {
+                  context.save()
+                  context.translate(poi.x, poi.y)
+                  var relayCol = poi.state === "captured" ? theme.accent : theme.muted
+                  context.globalAlpha = 0.9
+                  context.fillStyle = relayCol
+                  context.beginPath()
+                  context.moveTo(0, -14); context.lineTo(11, 0); context.lineTo(0, 14); context.lineTo(-11, 0); context.closePath(); context.fill()
+                  context.strokeStyle = theme.foreground
+                  context.lineWidth = 1.6
+                  context.stroke()
+                  context.globalAlpha = 1
+                  if (poi.state === "neutral" && poi.captureProgress > 0) {
+                    var progressFrac = poi.captureProgress / game.relayCaptureTime
+                    context.strokeStyle = theme.accent
+                    context.lineWidth = 3
+                    context.globalAlpha = 0.8
+                    context.beginPath(); context.arc(0, 0, 20, -Math.PI / 2, -Math.PI / 2 + progressFrac * Math.PI * 2); context.stroke()
+                    context.globalAlpha = 1
+                  }
+                  if (poi.state === "captured") {
+                    var relayPulse = 18 + 3 * Math.sin(game.animationTime * 5)
+                    context.globalAlpha = 0.3
+                    context.strokeStyle = theme.accent
+                    context.lineWidth = 2
+                    context.beginPath(); context.arc(0, 0, relayPulse, 0, Math.PI * 2); context.stroke()
+                    context.globalAlpha = 1
+                  }
+                  context.restore()
+                } else if (poi.type === "backup" && poi.state === "idle") {
+                  var backupPulse = 0.7 + 0.3 * Math.sin(game.animationTime * 3)
+                  context.save()
+                  context.translate(poi.x, poi.y)
+                  context.globalAlpha = 0.25 * backupPulse
+                  context.fillStyle = theme.green
+                  context.beginPath(); context.arc(0, 0, 20, 0, Math.PI * 2); context.fill()
+                  context.globalAlpha = 1
+                  context.strokeStyle = theme.green
+                  context.lineWidth = 2.4
+                  context.beginPath(); context.moveTo(-9, 0); context.lineTo(9, 0); context.moveTo(0, -9); context.lineTo(0, 9); context.stroke()
+                  context.beginPath(); context.arc(0, 0, 13, 0, Math.PI * 2); context.stroke()
+                  context.restore()
+                }
+              }
+              context.globalAlpha = 1
 
               for (var oi = 0; oi < game.orbs.length; oi++) {
                 var orb = game.orbs[oi]
@@ -1887,6 +2080,37 @@ ShellRoot {
                 context.restore()
               }
 
+              // Off-screen POI indicators -- the world is much bigger than the viewport now,
+              // so unresolved points of interest need a way to be findable. Cancel out the
+              // camera translate to work in plain viewport-local coordinates (0..viewportWidth).
+              context.save()
+              context.translate(game.cameraX - game.viewportWidth / 2, game.cameraY - game.viewportHeight / 2)
+              for (var pii = 0; pii < game.pois.length; pii++) {
+                var poiI = game.pois[pii]
+                if (poiI.type === "lair" && poiI.state !== "dormant") continue
+                if (poiI.type === "relay" && poiI.state !== "neutral") continue
+                if (poiI.type === "backup" && poiI.state !== "idle") continue
+                var pdx = poiI.x - game.playerX, pdy = poiI.y - game.playerY
+                var halfW = game.viewportWidth / 2 - 30
+                var halfH = game.viewportHeight / 2 - 30
+                if (Math.abs(pdx) < halfW && Math.abs(pdy) < halfH) continue
+                var pAng = Math.atan2(pdy, pdx)
+                var pScale = Math.min(Math.abs(halfW / Math.cos(pAng)), Math.abs(halfH / Math.sin(pAng)))
+                var ix = game.viewportWidth / 2 + Math.cos(pAng) * pScale
+                var iy = game.viewportHeight / 2 + Math.sin(pAng) * pScale
+                var poiCol = poiI.type === "lair" ? theme.red : poiI.type === "relay" ? theme.accent : theme.green
+                context.save()
+                context.translate(ix, iy)
+                context.rotate(pAng)
+                context.globalAlpha = 0.85
+                context.fillStyle = poiCol
+                context.beginPath()
+                context.moveTo(9, 0); context.lineTo(-6, -6); context.lineTo(-6, 6); context.closePath(); context.fill()
+                context.restore()
+              }
+              context.globalAlpha = 1
+              context.restore()
+
               context.restore()
 
               if (game.damageFlash > 0) {
@@ -1962,6 +2186,7 @@ ShellRoot {
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "FORKS SPLIT ON DEATH  ·  ROOTKIT ELITES FROM WAVE 6  ·  MINI-BOSSES FROM WAVE 10"; color: theme.orange; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "ELITES CAN BE SHIELDED, FAST, OR VOLATILE  ·  RARE MAGNET PACKETS SWEEP THE FIELD"; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "MINI-BOSSES GROW MORE UNPREDICTABLE AT HIGH WAVES  ·  DEPLOY AN AUTO-TURRET FOR COVERING FIRE"; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "EXPLORE FOR ROOTKIT LAIRS, SIGNAL RELAYS, AND BACKUP SERVERS  ·  FOLLOW THE EDGE ARROWS"; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "← ↑ ↓ → / WASD MOVE"; color: theme.muted; font.pixelSize: 11; font.family: "monospace" }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "BEST " + arcadeData.bestScore + "   ·   FURTHEST WAVE " + arcadeData.highestStage; color: theme.yellow; font.pixelSize: 13; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "PRESS ENTER TO BOOT"; color: theme.accent; font.pixelSize: 18; font.family: "monospace"; font.bold: true

@@ -727,6 +727,31 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("readonly property int maxOrbs: 260", swarm)
         self.assertIn("if (orbs.length > maxOrbs) orbs = orbs.slice(orbs.length - maxOrbs)", swarm)
 
+        # Points of interest: Rootkit Lair, Signal Relay, Backup Server -- give the (now much
+        # bigger) world a reason to actually explore it.
+        self.assertIn("property var pois: []", swarm)
+        self.assertIn("function generatePois()", swarm)
+        self.assertIn("function updatePois(dt)", swarm)
+        self.assertIn("pois = generatePois()", swarm)
+        self.assertIn("updatePois(dt)", swarm)
+        # Lair: sleeping elite that wakes on approach, tagged so its death is detected.
+        self.assertIn('{ id: poiId, type: "lair", x: lp.x, y: lp.y, state: "dormant" }', swarm)
+        self.assertIn("if (dist < lairWakeRadius) {", swarm)
+        self.assertIn("lairEnemy.lairId = poi.id", swarm)
+        self.assertIn("orbitCooldown: 0, modifier: null, lairId: null }", swarm)
+        self.assertIn("if (e.lairId) resolveLairKill(e)", swarm)
+        self.assertIn("function resolveLairKill(e)", swarm)
+        # Relay: channel to capture, then fires at nearby enemies like a fixed turret forever.
+        self.assertIn('type: "relay", x: rp.x, y: rp.y, state: "neutral", captureProgress: 0', swarm)
+        self.assertIn("poi.captureProgress = Math.min(relayCaptureTime, poi.captureProgress + dt)", swarm)
+        self.assertIn('poi.state = "captured"', swarm)
+        self.assertIn("applyDamage(target, relayDamage, 0.14)", swarm)
+        # Backup: one-time full heal + permanent +1 max integrity.
+        self.assertIn('{ id: poiId, type: "backup", x: bp.x, y: bp.y, state: "idle" }', swarm)
+        self.assertIn("hp = maxHp\n              maxHp += 1", swarm)
+        # Off-screen edge indicators so unresolved POIs in the bigger world are findable.
+        self.assertIn("var pAng = Math.atan2(pdy, pdx)", swarm)
+
         for effect in ("launch", "hit", "levelup", "hurt", "death"):
             wav = (ROOT / "game" / "assets" / "sfx" / f"swarm-{effect}.wav").read_bytes()
             self.assertEqual(wav[:4], b"RIFF")
