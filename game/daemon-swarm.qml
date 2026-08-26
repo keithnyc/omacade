@@ -111,6 +111,7 @@ ShellRoot {
       property real lastTickMs: Date.now()
       property int enemySerial: 0
       readonly property int maxParticles: 200
+      readonly property int maxDamageNumbers: 60
       property var enemies: []
       property var orbs: []
       property var bolts: []
@@ -119,6 +120,7 @@ ShellRoot {
       property var chains: []
       property var pops: []
       property var particles: []
+      property var damageNumbers: []
       property var stars: []
       property var upgradeChoices: []
       property bool leftHeld: false
@@ -253,6 +255,7 @@ ShellRoot {
         chains = []
         pops = []
         particles = []
+        damageNumbers = []
         upgradeChoices = []
         damageFlash = 0
         killFlash = 0
@@ -328,6 +331,35 @@ ShellRoot {
         return (critLevel > 0 && Math.random() < critLevel * 0.1) ? base * 2 : base
       }
 
+      function spawnDamageNumber(x, y, amount, crit) {
+        var updated = damageNumbers.slice(0)
+        updated.push({ x: x + (Math.random() - 0.5) * 12, y: y - 8, vy: -46,
+                       value: Math.round(amount), life: 0.6, maxLife: 0.6, crit: crit })
+        if (updated.length > maxDamageNumbers) updated = updated.slice(updated.length - maxDamageNumbers)
+        damageNumbers = updated
+      }
+
+      function updateDamageNumbers(dt) {
+        var active = []
+        for (var i = 0; i < damageNumbers.length; i++) {
+          var d = damageNumbers[i]
+          d.life -= dt
+          if (d.life <= 0) continue
+          d.y += d.vy * dt
+          d.vy *= 0.9
+          active.push(d)
+        }
+        damageNumbers = active
+      }
+
+      function applyDamage(target, base, flashDuration) {
+        var amount = rollDamage(base)
+        target.hp -= amount
+        target.hitFlash = flashDuration || 0.12
+        spawnDamageNumber(target.x, target.y, amount, amount > base)
+        return amount
+      }
+
       function fireBurst() {
         var target = nearestEnemy()
         if (!target) return
@@ -368,6 +400,7 @@ ShellRoot {
         }
 
         bolts = updated
+        spawnBurst(playerX, playerY, "accent", 3, 130, 0.14)
         burstCooldown = Math.max(0.22, 1.15 - (burstLevel - 1) * 0.08)
       }
 
@@ -389,8 +422,7 @@ ShellRoot {
         var jumps = Math.min(4, 2 + Math.floor(chainLevel / 2))
         for (var j = 0; j < jumps && current; j++) {
           hitIds[current.id] = true
-          current.hp -= rollDamage(dmg)
-          current.hitFlash = 0.14
+          applyDamage(current, dmg, 0.14)
           points.push({ x: current.x, y: current.y })
           var next = null
           var bestD = 190 * 190
@@ -423,8 +455,7 @@ ShellRoot {
           var target = enemies[b]
           var bx = target.x - mine.x, by = target.y - mine.y
           if (bx * bx + by * by <= blastRadius * blastRadius) {
-            target.hp -= rollDamage(blastDamage)
-            target.hitFlash = 0.14
+            applyDamage(target, blastDamage, 0.14)
           }
         }
         spawnBurst(mine.x, mine.y, "orange", 30, 240, 0.55)
@@ -569,8 +600,7 @@ ShellRoot {
             var hdx = target.x - bolt.x
             var hdy = target.y - bolt.y
             if (hdx * hdx + hdy * hdy <= (target.radius + 4) * (target.radius + 4) && bolt.hitIds.indexOf(target.id) < 0) {
-              target.hp -= rollDamage(bolt.damage)
-              target.hitFlash = 0.12
+              applyDamage(target, bolt.damage)
               bolt.hitIds.push(target.id)
               bolt.pierce -= 1
               shell.play(hitSound)
@@ -592,8 +622,7 @@ ShellRoot {
             var rdx = rtarget.x - ring.x
             var rdy = rtarget.y - ring.y
             if (rdx * rdx + rdy * rdy <= radius * radius && ring.hitIds.indexOf(rtarget.id) < 0) {
-              rtarget.hp -= rollDamage(ring.damage)
-              rtarget.hitFlash = 0.12
+              applyDamage(rtarget, ring.damage)
               ring.hitIds.push(rtarget.id)
             }
           }
@@ -611,8 +640,7 @@ ShellRoot {
               var odx = otarget.x - sx
               var ody = otarget.y - sy
               if (odx * odx + ody * ody <= (otarget.radius + 8) * (otarget.radius + 8) && (otarget.orbitCooldown || 0) <= 0) {
-                otarget.hp -= rollDamage(orbitDamage)
-                otarget.hitFlash = 0.12
+                applyDamage(otarget, orbitDamage)
                 otarget.orbitCooldown = 0.35
               }
             }
@@ -828,8 +856,13 @@ ShellRoot {
           if (eliteWarning <= 0) {
             var isBoss = wave >= 10 && wave % 5 === 0 && lastBossWave !== wave
             spawnEnemyAt(isBoss ? "boss" : "rootkit", eliteWarningPos)
-            if (isBoss) { lastBossWave = wave; statusMessage = "MINI-BOSS BREACH // DAEMON ENGAGED" }
-            else statusMessage = "ROOTKIT BREACH // ELITE ENGAGED"
+            if (isBoss) {
+              lastBossWave = wave
+              statusMessage = "MINI-BOSS BREACH // DAEMON ENGAGED"
+              spawnShake(10, 0.4)
+              spawnBurst(eliteWarningPos.x, eliteWarningPos.y, "red", 40, 260, 0.7)
+              spawnPop(eliteWarningPos.x, eliteWarningPos.y, "red", 120, 0.6)
+            } else statusMessage = "ROOTKIT BREACH // ELITE ENGAGED"
           }
           return
         }
@@ -884,6 +917,7 @@ ShellRoot {
         updateParticles(dt)
         updatePops(dt)
         updateChains(dt)
+        updateDamageNumbers(dt)
         if (mode !== "playing") return
         elapsed += dt
         if (regenLevel > 0 && hp < maxHp) {
@@ -1309,6 +1343,16 @@ ShellRoot {
                 context.beginPath(); context.arc(particle.x, particle.y, particle.size * 2.4, 0, Math.PI * 2); context.fill()
                 context.globalAlpha = lifeRatio
                 context.beginPath(); context.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2); context.fill()
+              }
+              context.globalAlpha = 1
+
+              context.textAlign = "center"
+              for (var dni = 0; dni < game.damageNumbers.length; dni++) {
+                var dn = game.damageNumbers[dni]
+                context.globalAlpha = Math.max(0, dn.life / dn.maxLife)
+                context.font = dn.crit ? "bold 16px monospace" : "bold 11px monospace"
+                context.fillStyle = dn.crit ? theme.yellow : theme.foreground
+                context.fillText("-" + dn.value + (dn.crit ? "!" : ""), dn.x, dn.y)
               }
               context.globalAlpha = 1
 
