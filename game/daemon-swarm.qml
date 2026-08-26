@@ -1366,11 +1366,12 @@ ShellRoot {
             if (game.waveTransitionLife <= 0) game.mode = "playing"
           }
           worldCanvas.requestPaint()
-          // Background (grid/stars/glow) only needs to keep up with camera panning, not
-          // per-entity motion -- repainting it at ~30fps instead of 60fps is imperceptible
-          // here and halves its share of per-frame cost.
+          // Background (grid/stars/glow) is a full-viewport repaint every time it runs, far
+          // more visual "damage" per call than any single entity -- it only needs to keep up
+          // with camera panning, not per-entity motion, so ~15fps here is imperceptible and
+          // cuts its share of per-frame cost to a quarter of running it every tick.
           frameCounter += 1
-          if (frameCounter % 2 === 0) bgCanvas.requestPaint()
+          if (frameCounter % 4 === 0) bgCanvas.requestPaint()
         }
       }
 
@@ -1428,6 +1429,10 @@ ShellRoot {
             anchors.centerIn: parent
             width: Math.min(parent.width, parent.height * game.worldAspect)
             height: width / game.worldAspect
+            // Threaded like worldCanvas -- a full-viewport background repaint on every camera
+            // pan was running synchronously on the GUI thread, which could stall frame
+            // delivery right when panning made the whole background change at once.
+            renderStrategy: Canvas.Threaded
             property var glowStyle: null
             onWidthChanged: { glowStyle = null; requestPaint() }
             onHeightChanged: { glowStyle = null; requestPaint() }

@@ -717,7 +717,11 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("if (sx < -margin || sx > game.viewportWidth + margin || sy < -margin || sy > game.viewportHeight + margin) continue", swarm)
         self.assertIn("var gridStartX = Math.max(0, Math.floor((game.cameraX - game.viewportWidth / 2) / 60 - 1) * 60)", swarm)
         self.assertIn("property int frameCounter: 0", swarm)
-        self.assertIn("if (frameCounter % 2 === 0) bgCanvas.requestPaint()", swarm)
+        self.assertIn("if (frameCounter % 4 === 0) bgCanvas.requestPaint()", swarm)
+        # bgCanvas repaints the whole viewport every call -- threaded so that doesn't run
+        # synchronously on the GUI thread and stall frame delivery while panning.
+        self.assertIn("id: bgCanvas", swarm)
+        self.assertEqual(swarm.count("renderStrategy: Canvas.Threaded"), 2)
         self.assertIn("readonly property int maxOrbs: 260", swarm)
         self.assertIn("if (orbs.length > maxOrbs) orbs = orbs.slice(orbs.length - maxOrbs)", swarm)
 
