@@ -1351,8 +1351,8 @@ ShellRoot {
                 var dn = game.damageNumbers[dni]
                 context.globalAlpha = Math.max(0, dn.life / dn.maxLife)
                 context.font = dn.crit ? "bold 16px monospace" : "bold 11px monospace"
-                context.fillStyle = dn.crit ? theme.yellow : theme.foreground
-                context.fillText("-" + dn.value + (dn.crit ? "!" : ""), dn.x, dn.y)
+                context.fillStyle = dn.crit ? theme.yellow : theme.orange
+                context.fillText(dn.value + (dn.crit ? "!" : ""), dn.x, dn.y)
               }
               context.globalAlpha = 1
 
