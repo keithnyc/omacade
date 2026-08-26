@@ -47,16 +47,20 @@ ShellRoot {
       readonly property real orbitRadius: 58 + orbitRangeLevel * 16
       readonly property real orbitSpin: orbitEvolved ? 5.4 : 3.1
       readonly property int orbitDamage: 1 + orbitLevel + (orbitEvolved ? 2 : 0)
+      readonly property int orbitShardCap: 10
+      readonly property int orbitShardCount: Math.min(orbitLevel, orbitShardCap)
       readonly property int maxEnemies: Math.min(240, 90 + wave * 7)
-      readonly property int burstMaxLevel: 5
-      readonly property int ringMaxLevel: 5
-      readonly property int orbitMaxLevel: 4
-      readonly property int chainMaxLevel: 4
-      readonly property int mineMaxLevel: 4
-      readonly property int turretMaxLevel: 4
-      readonly property int catalystMaxLevel: 5
+      // These are evolution-readiness thresholds, not hard caps -- every "-up" upgrade
+      // stays in the pool indefinitely past this point so a build keeps growing at wave 50+.
+      readonly property int burstMaxLevel: 10
+      readonly property int ringMaxLevel: 10
+      readonly property int orbitMaxLevel: 8
+      readonly property int chainMaxLevel: 8
+      readonly property int mineMaxLevel: 8
+      readonly property int turretMaxLevel: 8
+      readonly property int catalystMaxLevel: 10
       readonly property int mineCap: 2 + mineCapBonus
-      readonly property int turretCap: 1 + Math.floor(turretLevel / 2)
+      readonly property int turretCap: Math.min(6, 1 + Math.floor(turretLevel / 2))
       readonly property real slowAuraRadius: 70 + slowAuraLevel * 22
       readonly property string alertLevel: wave < 4 ? "LOW" : wave < 8 ? "ELEVATED" : wave < 14 ? "SEVERE" : "CRITICAL"
       readonly property color alertColor: alertLevel === "LOW" ? theme.green : alertLevel === "ELEVATED" ? theme.yellow : alertLevel === "SEVERE" ? theme.orange : theme.red
@@ -176,41 +180,45 @@ ShellRoot {
         return theme.foreground
       }
 
+      function levelTag(lvl, maxLvl) {
+        return lvl < maxLvl ? ("Lv" + lvl + "/" + maxLvl) : ("Lv" + lvl)
+      }
+
       function burstStatusText() {
-        if (burstEvolved) return "BURST  PACKET STORM"
         var extra = (burstMultiLevel > 0 ? " +" + burstMultiLevel + "T" : "") + (burstSpreadLevel > 0 ? " +" + (burstSpreadLevel * 2) + "S" : "")
+        if (burstEvolved) return "BURST  PACKET STORM  " + levelTag(burstLevel, burstMaxLevel) + extra
         var ready = burstLevel >= burstMaxLevel && speedBonus >= catalystMaxLevel
-        return "BURST  Lv" + burstLevel + "/" + burstMaxLevel + extra + (ready ? "  READY" : "")
+        return "BURST  " + levelTag(burstLevel, burstMaxLevel) + extra + (ready ? "  READY" : "")
       }
 
       function ringStatusText() {
         if (ringLevel === 0) return "RING   --"
-        if (ringEvolved) return "RING   AEGIS PROTOCOL"
+        if (ringEvolved) return "RING   AEGIS PROTOCOL  " + levelTag(ringLevel, ringMaxLevel)
         var ready = ringLevel >= ringMaxLevel && shieldBonus >= catalystMaxLevel
-        return "RING   Lv" + ringLevel + "/" + ringMaxLevel + (ready ? "  READY" : "")
+        return "RING   " + levelTag(ringLevel, ringMaxLevel) + (ready ? "  READY" : "")
       }
 
       function orbitStatusText() {
         if (orbitLevel === 0) return "ORBIT  --"
-        if (orbitEvolved) return "ORBIT  ORBIT STORM"
         var extra = orbitRangeLevel > 0 ? " +" + orbitRangeLevel + "R" : ""
+        if (orbitEvolved) return "ORBIT  ORBIT STORM  " + levelTag(orbitLevel, orbitMaxLevel) + extra
         var ready = orbitLevel >= orbitMaxLevel && slowAuraLevel >= catalystMaxLevel
-        return "ORBIT  Lv" + orbitLevel + "/" + orbitMaxLevel + extra + (ready ? "  READY" : "")
+        return "ORBIT  " + levelTag(orbitLevel, orbitMaxLevel) + extra + (ready ? "  READY" : "")
       }
 
       function chainStatusText() {
         if (chainLevel === 0) return "ARC    --"
-        if (chainEvolved) return "ARC    ARC CASCADE"
+        if (chainEvolved) return "ARC    ARC CASCADE  " + levelTag(chainLevel, chainMaxLevel)
         var ready = chainLevel >= chainMaxLevel && critLevel >= catalystMaxLevel
-        return "ARC    Lv" + chainLevel + "/" + chainMaxLevel + (ready ? "  READY" : "")
+        return "ARC    " + levelTag(chainLevel, chainMaxLevel) + (ready ? "  READY" : "")
       }
 
       function mineStatusText() {
         if (mineLevel === 0) return "MINE   --"
-        if (mineEvolved) return "MINE   MINEFIELD PROTOCOL"
-        var ready = mineLevel >= mineMaxLevel && regenLevel >= catalystMaxLevel
         var tag = mineCascade ? " CHAIN" : ""
-        return "MINE   Lv" + mineLevel + "/" + mineMaxLevel + " CAP" + mineCap + tag + (ready ? "  READY" : "")
+        if (mineEvolved) return "MINE   MINEFIELD PROTOCOL  " + levelTag(mineLevel, mineMaxLevel) + " CAP" + mineCap + tag
+        var ready = mineLevel >= mineMaxLevel && regenLevel >= catalystMaxLevel
+        return "MINE   " + levelTag(mineLevel, mineMaxLevel) + " CAP" + mineCap + tag + (ready ? "  READY" : "")
       }
 
       function spawnBurst(x, y, colorKey, count, speed, life) {
@@ -696,7 +704,7 @@ ShellRoot {
 
       function turretStatusText() {
         if (turretLevel === 0) return "TURRET --"
-        return "TURRET Lv" + turretLevel + "/" + turretMaxLevel + "  x" + turretCap
+        return "TURRET " + levelTag(turretLevel, turretMaxLevel) + "  x" + turretCap
       }
 
       function updateChains(dt) {
@@ -853,8 +861,8 @@ ShellRoot {
 
         if (orbitLevel > 0) {
           var orbitHitPad = orbitEvolved ? 12 : 8
-          for (var s = 0; s < orbitLevel; s++) {
-            var angle = animationTime * orbitSpin + s * (Math.PI * 2 / orbitLevel)
+          for (var s = 0; s < orbitShardCount; s++) {
+            var angle = animationTime * orbitSpin + s * (Math.PI * 2 / orbitShardCount)
             var sx = playerX + Math.cos(angle) * orbitRadius
             var sy = playerY + Math.sin(angle) * orbitRadius
             for (var oi = 0; oi < enemies.length; oi++) {
@@ -958,26 +966,26 @@ ShellRoot {
         if (chainLevel === 0) pool.push({ id: "unlock-chain", title: "TRACEROUTE ARC", detail: "Unlock chain lightning that arcs between nearby threats." })
         if (mineLevel === 0) pool.push({ id: "unlock-mine", title: "HONEYPOT MINE", detail: "Unlock a proximity trap that detonates on contact." })
         if (turretLevel === 0) pool.push({ id: "unlock-turret", title: "AUTO-TURRET", detail: "Deploy a stationary turret that lasers nearby threats." })
-        if (ringLevel > 0 && ringLevel < ringMaxLevel && !ringEvolved) pool.push({ id: "ring-up", title: "RING OVERCLOCK", detail: "Firewall Ring: +radius, +damage, faster pulse." })
-        if (orbitLevel > 0 && orbitLevel < orbitMaxLevel && !orbitEvolved) pool.push({ id: "orbit-up", title: "ORBIT SHARD", detail: "Patch Orbit: +1 shard." })
-        if (orbitLevel > 0 && !orbitEvolved) pool.push({ id: "orbit-range-up", title: "ORBIT EXPANSE", detail: "Patch Orbit: shards orbit further out." })
-        if (chainLevel > 0 && chainLevel < chainMaxLevel && !chainEvolved) pool.push({ id: "chain-up", title: "ARC OVERCLOCK", detail: "Traceroute Arc: +damage, +1 jump, faster pulse." })
-        if (mineLevel > 0 && mineLevel < mineMaxLevel && !mineEvolved) pool.push({ id: "mine-up", title: "MINE OVERCLOCK", detail: "Honeypot Mine: +blast radius, +damage, faster redeploy." })
+        if (ringLevel > 0) pool.push({ id: "ring-up", title: "RING OVERCLOCK", detail: "Firewall Ring: +radius, +damage, faster pulse." })
+        if (orbitLevel > 0) pool.push({ id: "orbit-up", title: "ORBIT SHARD", detail: orbitLevel < orbitShardCap ? "Patch Orbit: +1 shard." : "Patch Orbit: +damage per shard (shard count capped)." })
+        if (orbitLevel > 0) pool.push({ id: "orbit-range-up", title: "ORBIT EXPANSE", detail: "Patch Orbit: shards orbit further out." })
+        if (chainLevel > 0) pool.push({ id: "chain-up", title: "ARC OVERCLOCK", detail: "Traceroute Arc: +damage, +1 jump, faster pulse." })
+        if (mineLevel > 0) pool.push({ id: "mine-up", title: "MINE OVERCLOCK", detail: "Honeypot Mine: +blast radius, +damage, faster redeploy." })
         if (mineLevel > 0) pool.push({ id: "mine-cap-up", title: "EXPANDED PAYLOAD", detail: "Honeypot Mine: +1 max deployed at once." })
         if (mineLevel > 0 && !mineCascade && !mineEvolved) pool.push({ id: "mine-cascade", title: "CASCADE TRIGGER", detail: "Honeypot Mine: blasts also detonate nearby mines." })
-        if (turretLevel > 0 && turretLevel < turretMaxLevel) pool.push({ id: "turret-up", title: "TURRET OVERCLOCK", detail: "Auto-Turret: +damage, +range, faster fire and redeploy." })
-        if (burstLevel < burstMaxLevel && !burstEvolved) pool.push({ id: "burst-up", title: "PACKET OVERCLOCK", detail: "Packet Burst: faster fire, +pierce, +damage." })
+        if (turretLevel > 0) pool.push({ id: "turret-up", title: "TURRET OVERCLOCK", detail: "Auto-Turret: +damage, +range, faster fire and redeploy." })
+        pool.push({ id: "burst-up", title: "PACKET OVERCLOCK", detail: "Packet Burst: faster fire, +pierce, +damage." })
         pool.push({ id: "burst-multi-up", title: "PACKET FORK", detail: "Packet Burst: +1 simultaneous target." })
         pool.push({ id: "burst-spread-up", title: "SPREAD ROUTING", detail: "Packet Burst: +2 angled bolts per shot." })
-        if (speedBonus < catalystMaxLevel) pool.push({ id: "speed-up", title: "IO BOOST", detail: "+15% movement speed." })
+        pool.push({ id: "speed-up", title: "IO BOOST", detail: "+15% movement speed." })
         pool.push({ id: "hp-up", title: "INTEGRITY PATCH", detail: "+1 max integrity, heal 1." })
         pool.push({ id: "pickup-up", title: "WIDE SCAN", detail: "+ pickup radius for stray packets." })
         pool.push({ id: "xp-up", title: "CACHE BOOST", detail: "+1 value on every packet collected." })
-        if (shieldBonus < catalystMaxLevel) pool.push({ id: "shield-up", title: "HARDENED SHELL", detail: "+0.15s invulnerability after each hit." })
-        if (regenLevel < catalystMaxLevel) pool.push({ id: "regen-up", title: "AUTO-PATCH", detail: "Slowly regenerate integrity over time." })
+        pool.push({ id: "shield-up", title: "HARDENED SHELL", detail: "+0.15s invulnerability after each hit." })
+        pool.push({ id: "regen-up", title: "AUTO-PATCH", detail: "Slowly regenerate integrity over time." })
         pool.push({ id: "failover-up", title: "FAILOVER", detail: "+1 auto-revive at half integrity when you'd die." })
-        if (critLevel < catalystMaxLevel) pool.push({ id: "crit-up", title: "EXPLOIT CHANCE", detail: "+10% chance any hit deals double damage." })
-        if (slowAuraLevel < catalystMaxLevel) pool.push({ id: "slow-aura-up", title: "THROTTLE FIELD", detail: "Enemies near you move slower." })
+        pool.push({ id: "crit-up", title: "EXPLOIT CHANCE", detail: "+10% chance any hit deals double damage." })
+        pool.push({ id: "slow-aura-up", title: "THROTTLE FIELD", detail: "Enemies near you move slower." })
 
         if (!burstEvolved && burstLevel >= burstMaxLevel && speedBonus >= catalystMaxLevel)
           pool.push({ id: "evolve-burst", title: "PACKET STORM", detail: "EVOLUTION: Packet Burst strikes every visible target at once." })
@@ -1720,8 +1728,8 @@ ShellRoot {
 
               if (game.orbitLevel > 0) {
                 var orbitCol = game.orbitEvolved ? theme.yellow : theme.accent
-                for (var os = 0; os < game.orbitLevel; os++) {
-                  var oAng = game.animationTime * game.orbitSpin + os * (Math.PI * 2 / game.orbitLevel)
+                for (var os = 0; os < game.orbitShardCount; os++) {
+                  var oAng = game.animationTime * game.orbitSpin + os * (Math.PI * 2 / game.orbitShardCount)
                   var ox = game.playerX + Math.cos(oAng) * game.orbitRadius
                   var oy = game.playerY + Math.sin(oAng) * game.orbitRadius
                   context.globalAlpha = 0.32
@@ -1811,15 +1819,15 @@ ShellRoot {
               Text { text: game.mineStatusText(); color: game.mineEvolved ? theme.yellow : (game.mineLevel > 0 ? theme.orange : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Text { text: game.turretStatusText(); color: game.turretLevel > 0 ? theme.accent : theme.muted; font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Rectangle { visible: game.speedBonus > 0 || game.pickupBonus > 0 || game.maxHp > 5 || game.xpBonus > 0 || game.shieldBonus > 0 || game.regenLevel > 0 || game.failoverCharges > 0 || game.critLevel > 0 || game.slowAuraLevel > 0; width: parent.width; height: 1; color: theme.muted }
-              Text { visible: game.speedBonus > 0; text: "SPD    +" + (game.speedBonus * 15) + "%  Lv" + game.speedBonus + "/" + game.catalystMaxLevel; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { visible: game.speedBonus > 0; text: "SPD    +" + (game.speedBonus * 15) + "%  " + game.levelTag(game.speedBonus, game.catalystMaxLevel); color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.pickupBonus > 0; text: "SCAN   +" + game.pickupBonus; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.maxHp > 5; text: "MAX HP " + game.maxHp; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.xpBonus > 0; text: "CACHE  +" + game.xpBonus; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
-              Text { visible: game.shieldBonus > 0; text: "SHIELD +" + game.shieldBonus + "  Lv" + game.shieldBonus + "/" + game.catalystMaxLevel; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
-              Text { visible: game.regenLevel > 0; text: "REGEN  Lv" + game.regenLevel + "/" + game.catalystMaxLevel; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { visible: game.shieldBonus > 0; text: "SHIELD +" + game.shieldBonus + "  " + game.levelTag(game.shieldBonus, game.catalystMaxLevel); color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { visible: game.regenLevel > 0; text: "REGEN  " + game.levelTag(game.regenLevel, game.catalystMaxLevel); color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.failoverCharges > 0; text: "FAILOVER x" + game.failoverCharges; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
-              Text { visible: game.critLevel > 0; text: "CRIT   +" + (game.critLevel * 10) + "%  Lv" + game.critLevel + "/" + game.catalystMaxLevel; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
-              Text { visible: game.slowAuraLevel > 0; text: "THROTTLE Lv" + game.slowAuraLevel + "/" + game.catalystMaxLevel; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { visible: game.critLevel > 0; text: "CRIT   +" + (game.critLevel * 10) + "%  " + game.levelTag(game.critLevel, game.catalystMaxLevel); color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { visible: game.slowAuraLevel > 0; text: "THROTTLE " + game.levelTag(game.slowAuraLevel, game.catalystMaxLevel); color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
             }
           }
 

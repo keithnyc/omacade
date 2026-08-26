@@ -647,6 +647,32 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn('id === "unlock-turret"', swarm)
         self.assertIn('id === "turret-up"', swarm)
         self.assertIn("if (t.hp <= 0) {", swarm)
+
+        # Weapon/catalyst level caps raised and decoupled from evolution-readiness thresholds:
+        # "-up" tracks stay in the pool forever so a build keeps growing well past wave 50.
+        for const_name, value in (
+            ("burstMaxLevel", 10), ("ringMaxLevel", 10), ("orbitMaxLevel", 8),
+            ("chainMaxLevel", 8), ("mineMaxLevel", 8), ("turretMaxLevel", 8), ("catalystMaxLevel", 10),
+        ):
+            self.assertIn(f"readonly property int {const_name}: {value}", swarm)
+        self.assertIn("function levelTag(lvl, maxLvl)", swarm)
+        self.assertIn("if (ringLevel > 0) pool.push({ id: \"ring-up\"", swarm)
+        self.assertIn("if (orbitLevel > 0) pool.push({ id: \"orbit-up\"", swarm)
+        self.assertIn("if (chainLevel > 0) pool.push({ id: \"chain-up\"", swarm)
+        self.assertIn("if (mineLevel > 0) pool.push({ id: \"mine-up\"", swarm)
+        self.assertIn("if (turretLevel > 0) pool.push({ id: \"turret-up\"", swarm)
+        self.assertIn('pool.push({ id: "burst-up"', swarm)
+        self.assertIn('pool.push({ id: "speed-up"', swarm)
+        self.assertIn('pool.push({ id: "shield-up"', swarm)
+        self.assertIn('pool.push({ id: "regen-up"', swarm)
+        self.assertIn('pool.push({ id: "crit-up"', swarm)
+        self.assertIn('pool.push({ id: "slow-aura-up"', swarm)
+        # Orbit shard count is capped independently of orbit level so per-frame collision
+        # cost can't blow up at very high levels; damage keeps scaling with the raw level.
+        self.assertIn("readonly property int orbitShardCap: 10", swarm)
+        self.assertIn("readonly property int orbitShardCount: Math.min(orbitLevel, orbitShardCap)", swarm)
+        self.assertIn("for (var s = 0; s < orbitShardCount; s++)", swarm)
+        self.assertIn("readonly property int turretCap: Math.min(6, 1 + Math.floor(turretLevel / 2))", swarm)
         self.assertIn("if (t.life >= t.maxLife) {", swarm)
 
         for effect in ("launch", "hit", "levelup", "hurt", "death"):
