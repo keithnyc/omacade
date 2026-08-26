@@ -686,8 +686,11 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("if (burstSpreadLevel < burstSpreadCap) pool.push({ id: \"burst-spread-up\"", swarm)
         self.assertIn("if (mineLevel > 0 && mineCapBonus < mineCapBonusMax) pool.push({ id: \"mine-cap-up\"", swarm)
         self.assertIn("invulnerable = 0.9 + Math.min(shieldBonus, 8) * 0.15", swarm)
-        self.assertIn("readonly property real levelHardening: Math.pow(1.05, Math.max(0, level - 30))", swarm)
-        self.assertIn("readonly property int xpToNext: Math.round((6 + level * 4) * levelHardening)", swarm)
+        self.assertIn("readonly property real levelHardening: Math.pow(1.035, level)", swarm)
+        self.assertIn("readonly property int xpToNext: Math.round((10 + level * 6) * levelHardening)", swarm)
+        # Big single XP gains (boss kills, magnet sweeps) must not chain multiple level-up
+        # screens back to back -- looping collapses them into one prompt.
+        self.assertIn("while (xp >= xpToNext) {", swarm)
 
         # Scrolling camera: the arena (worldWidth/Height) is bigger than the fixed on-screen
         # viewport, and the camera follows the player through it with parallax background layers.

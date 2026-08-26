@@ -89,10 +89,12 @@ ShellRoot {
       readonly property real slowAuraRadius: 70 + slowAuraLevel * 22
       readonly property string alertLevel: wave < 4 ? "LOW" : wave < 8 ? "ELEVATED" : wave < 14 ? "SEVERE" : "CRITICAL"
       readonly property color alertColor: alertLevel === "LOW" ? theme.green : alertLevel === "ELEVATED" ? theme.yellow : alertLevel === "SEVERE" ? theme.orange : theme.red
-      // XP cost compounds past level 30 so a snowballing build can't chain level-ups every
-      // 1-2 seconds forever -- the interrupt-every-second problem reported at wave 90+.
-      readonly property real levelHardening: Math.pow(1.05, Math.max(0, level - 30))
-      readonly property int xpToNext: Math.round((6 + level * 4) * levelHardening)
+      // Compounds from level 1 instead of only kicking in past level 30 -- upgrade prompts
+      // (a full stop requiring a pick) were firing near-constantly in the early/mid game,
+      // which was interrupting the flow more than the wave-90+ late-game problem this
+      // originally targeted. Still keeps compounding forever so a long run never plateaus.
+      readonly property real levelHardening: Math.pow(1.035, level)
+      readonly property int xpToNext: Math.round((10 + level * 6) * levelHardening)
       readonly property int waveKillTarget: 8 + wave * 5
       readonly property real pickupRadius: 62 + pickupBonus * 16
       readonly property real moveSpeed: 190 * (1 + speedBonus * 0.15)
@@ -1129,8 +1131,13 @@ ShellRoot {
       }
 
       function gainXp(amount) {
+        // A big single XP gain (a boss kill, a magnet-packet sweep) could otherwise cross
+        // several level thresholds at once and only leveled up once here, leaving the extra
+        // xp to trigger another full level-up screen on the very next pickup -- back-to-back
+        // interrupts from one moment of loot. Looping collapses that into a single prompt
+        // (only the final level's choices are offered) while still crediting every level.
         xp += amount
-        if (xp >= xpToNext) {
+        while (xp >= xpToNext) {
           xp -= xpToNext
           levelUp()
         }
