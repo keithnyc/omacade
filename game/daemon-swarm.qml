@@ -87,6 +87,14 @@ ShellRoot {
       readonly property int mineCap: 2 + Math.min(mineCapBonus, mineCapBonusMax)
       readonly property int turretCap: Math.min(6, 1 + Math.floor(turretLevel / 2))
       readonly property real slowAuraRadius: 70 + slowAuraLevel * 22
+      readonly property real siphonChance: siphonLevel * 0.06
+      // Capped well short of 100% -- this blunts damage, it shouldn't make hits free. The
+      // player should still be able to die if they get sloppy, even at very high levels.
+      readonly property real armorReduction: Math.min(0.75, armorLevel * 0.05)
+      readonly property real comboWindow: 1.5
+      readonly property int comboCap: 10 + comboLevel * 5
+      readonly property real comboStep: 0.02 + comboLevel * 0.01
+      readonly property real comboMultiplier: comboLevel > 0 ? 1 + Math.min(comboCount, comboCap) * comboStep : 1
       readonly property string alertLevel: wave < 4 ? "LOW" : wave < 8 ? "ELEVATED" : wave < 14 ? "SEVERE" : "CRITICAL"
       readonly property color alertColor: alertLevel === "LOW" ? theme.green : alertLevel === "ELEVATED" ? theme.yellow : alertLevel === "SEVERE" ? theme.orange : theme.red
       // Compounds from level 1 instead of only kicking in past level 30 -- upgrade prompts
@@ -145,6 +153,11 @@ ShellRoot {
       property int failoverCharges: 0
       property int critLevel: 0
       property int slowAuraLevel: 0
+      property int siphonLevel: 0
+      property int armorLevel: 0
+      property int comboLevel: 0
+      property int comboCount: 0
+      property real comboTimer: 0
       property int lastBossWave: 0
       property bool burstEvolved: false
       property bool ringEvolved: false
@@ -354,6 +367,11 @@ ShellRoot {
         failoverCharges = 0
         critLevel = 0
         slowAuraLevel = 0
+        siphonLevel = 0
+        armorLevel = 0
+        comboLevel = 0
+        comboCount = 0
+        comboTimer = 0
         lastBossWave = 0
         burstEvolved = false
         ringEvolved = false
@@ -595,7 +613,8 @@ ShellRoot {
       }
 
       function rollDamage(base) {
-        return (critLevel > 0 && Math.random() < critLevel * 0.1) ? base * 2 : base
+        var scaled = base * comboMultiplier
+        return (critLevel > 0 && Math.random() < critLevel * 0.1) ? scaled * 2 : scaled
       }
 
       function spawnDamageNumber(x, y, amount, crit) {
@@ -620,7 +639,7 @@ ShellRoot {
       }
 
       function applyDamage(target, base, flashDuration, forceCrit) {
-        var amount = forceCrit ? base * 2 : rollDamage(base)
+        var amount = forceCrit ? base * comboMultiplier * 2 : rollDamage(base)
         if (target.modifier === "shielded") amount = Math.max(1, Math.round(amount * 0.6))
         target.hp -= amount
         target.hitFlash = flashDuration || 0.12
@@ -951,6 +970,11 @@ ShellRoot {
       function killRewards(e) {
         score += e.score
         dropLoot(e)
+        if (comboLevel > 0) { comboCount += 1; comboTimer = comboWindow }
+        if (siphonLevel > 0 && hp < maxHp && Math.random() < siphonChance) {
+          hp += 1
+          spawnPop(playerX, playerY, "green", 24, 0.3)
+        }
         if (e.type === "rootkit" || isBossType(e.type)) {
           statusMessage = (isBossType(e.type) ? "MINI-BOSS PURGED // +" : "ROOTKIT PURGED // +") + e.score
           spawnBurst(e.x, e.y, e.colorKey, 46, 260, 0.8)
@@ -970,6 +994,7 @@ ShellRoot {
       function damagePlayer(amount) {
         if (invulnerable > 0 || mode !== "playing") return
         if (ringEvolved) amount = Math.max(1, amount - 1)
+        if (armorLevel > 0) amount = Math.max(1, Math.round(amount * (1 - armorReduction)))
         hp -= amount
         invulnerable = 0.9 + Math.min(shieldBonus, 8) * 0.15
         damageFlash = 0.4
@@ -1170,6 +1195,9 @@ ShellRoot {
         pool.push({ id: "failover-up", title: "FAILOVER", detail: "+1 auto-revive at half integrity when you'd die." })
         pool.push({ id: "crit-up", title: "EXPLOIT CHANCE", detail: "+10% chance any hit deals double damage." })
         pool.push({ id: "slow-aura-up", title: "THROTTLE FIELD", detail: "Enemies near you move slower." })
+        pool.push({ id: "siphon-up", title: "DATA SIPHON", detail: "Chance to restore 1 integrity on kill." })
+        pool.push({ id: "armor-up", title: "PACKET SHIELD", detail: "Reduce all incoming damage (up to 75%)." })
+        pool.push({ id: "combo-up", title: "KILL STREAK", detail: "Chained kills build a stacking damage bonus." })
 
         if (!burstEvolved && burstLevel >= burstMaxLevel && speedBonus >= catalystMaxLevel)
           pool.push({ id: "evolve-burst", title: "PACKET STORM", detail: "EVOLUTION: Packet Burst strikes every visible target at once." })
@@ -1245,6 +1273,9 @@ ShellRoot {
         else if (id === "failover-up") failoverCharges += 1
         else if (id === "crit-up") critLevel += 1
         else if (id === "slow-aura-up") slowAuraLevel += 1
+        else if (id === "siphon-up") siphonLevel += 1
+        else if (id === "armor-up") armorLevel += 1
+        else if (id === "combo-up") comboLevel += 1
         else if (id === "evolve-burst") { burstEvolved = true; announceEvolution("PACKET STORM") }
         else if (id === "evolve-ring") { ringEvolved = true; announceEvolution("AEGIS PROTOCOL") }
         else if (id === "evolve-orbit") { orbitEvolved = true; announceEvolution("ORBIT STORM") }
@@ -1392,6 +1423,10 @@ ShellRoot {
         updateDamageNumbers(dt)
         if (mode !== "playing") return
         elapsed += dt
+        if (comboCount > 0) {
+          comboTimer -= dt
+          if (comboTimer <= 0) { comboTimer = 0; comboCount = 0 }
+        }
         if (regenLevel > 0 && hp < maxHp) {
           regenTimer += dt
           var regenInterval = Math.max(3, 9 - regenLevel * 1.5)
@@ -2158,7 +2193,7 @@ ShellRoot {
               Text { text: game.chainStatusText(); color: game.chainEvolved ? theme.accent : (game.chainLevel > 0 ? theme.yellow : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Text { text: game.mineStatusText(); color: game.mineEvolved ? theme.yellow : (game.mineLevel > 0 ? theme.orange : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Text { text: game.turretStatusText(); color: game.turretLevel > 0 ? theme.accent : theme.muted; font.pixelSize: 11; font.family: "monospace"; font.bold: true }
-              Rectangle { visible: game.speedBonus > 0 || game.pickupBonus > 0 || game.maxHp > 5 || game.xpBonus > 0 || game.shieldBonus > 0 || game.regenLevel > 0 || game.failoverCharges > 0 || game.critLevel > 0 || game.slowAuraLevel > 0; width: parent.width; height: 1; color: theme.muted }
+              Rectangle { visible: game.speedBonus > 0 || game.pickupBonus > 0 || game.maxHp > 5 || game.xpBonus > 0 || game.shieldBonus > 0 || game.regenLevel > 0 || game.failoverCharges > 0 || game.critLevel > 0 || game.slowAuraLevel > 0 || game.siphonLevel > 0 || game.armorLevel > 0 || game.comboLevel > 0; width: parent.width; height: 1; color: theme.muted }
               Text { visible: game.speedBonus > 0; text: "SPD    +" + (game.speedBonus * 15) + "%  " + game.levelTag(game.speedBonus, game.catalystMaxLevel); color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.pickupBonus > 0; text: "SCAN   +" + game.pickupBonus; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.maxHp > 5; text: "MAX HP " + game.maxHp; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
@@ -2168,6 +2203,9 @@ ShellRoot {
               Text { visible: game.failoverCharges > 0; text: "FAILOVER x" + game.failoverCharges; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.critLevel > 0; text: "CRIT   +" + (game.critLevel * 10) + "%  " + game.levelTag(game.critLevel, game.catalystMaxLevel); color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.slowAuraLevel > 0; text: "THROTTLE " + game.levelTag(game.slowAuraLevel, game.catalystMaxLevel); color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { visible: game.siphonLevel > 0; text: "SIPHON +" + Math.round(Math.min(1, game.siphonChance) * 100) + "%  Lv" + game.siphonLevel; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { visible: game.armorLevel > 0; text: "ARMOR  -" + Math.round(game.armorReduction * 100) + "%  Lv" + game.armorLevel; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { visible: game.comboLevel > 0; text: "STREAK " + game.comboCount + "x  +" + Math.round((game.comboMultiplier - 1) * 100) + "%  Lv" + game.comboLevel; color: game.comboCount >= game.comboCap ? theme.red : theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
             }
           }
 

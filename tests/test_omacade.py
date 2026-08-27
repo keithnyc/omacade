@@ -755,6 +755,30 @@ class OmacadeTests(unittest.TestCase):
         # Off-screen edge indicators so unresolved POIs in the bigger world are findable.
         self.assertIn("var pAng = Math.atan2(pdy, pdx)", swarm)
 
+        # Three new passive powerups requested after playtesting: lifesteal, flat damage
+        # reduction, and a decaying kill-streak damage multiplier.
+        self.assertIn('pool.push({ id: "siphon-up"', swarm)
+        self.assertIn('pool.push({ id: "armor-up"', swarm)
+        self.assertIn('pool.push({ id: "combo-up"', swarm)
+        self.assertIn('id === "siphon-up") siphonLevel += 1', swarm)
+        self.assertIn('id === "armor-up") armorLevel += 1', swarm)
+        self.assertIn('id === "combo-up") comboLevel += 1', swarm)
+        # Data Siphon: chance-based heal on kill, rolled in killRewards alongside loot/score.
+        self.assertIn("readonly property real siphonChance: siphonLevel * 0.06", swarm)
+        self.assertIn("if (siphonLevel > 0 && hp < maxHp && Math.random() < siphonChance) {", swarm)
+        # Packet Shield: flat % damage reduction, capped so the player can still die.
+        self.assertIn("readonly property real armorReduction: Math.min(0.75, armorLevel * 0.05)", swarm)
+        self.assertIn("if (armorLevel > 0) amount = Math.max(1, Math.round(amount * (1 - armorReduction)))", swarm)
+        # Kill Streak: chained kills within comboWindow build a decaying damage multiplier,
+        # applied at the single applyDamage/rollDamage choke point so every weapon benefits.
+        self.assertIn("readonly property real comboWindow: 1.5", swarm)
+        self.assertIn("readonly property int comboCap: 10 + comboLevel * 5", swarm)
+        self.assertIn("readonly property real comboMultiplier: comboLevel > 0 ? 1 + Math.min(comboCount, comboCap) * comboStep : 1", swarm)
+        self.assertIn("if (comboLevel > 0) { comboCount += 1; comboTimer = comboWindow }", swarm)
+        self.assertIn("var scaled = base * comboMultiplier", swarm)
+        self.assertIn("var amount = forceCrit ? base * comboMultiplier * 2 : rollDamage(base)", swarm)
+        self.assertIn("if (comboTimer <= 0) { comboTimer = 0; comboCount = 0 }", swarm)
+
         for effect in ("launch", "hit", "levelup", "hurt", "death"):
             wav = (ROOT / "game" / "assets" / "sfx" / f"swarm-{effect}.wav").read_bytes()
             self.assertEqual(wav[:4], b"RIFF")
