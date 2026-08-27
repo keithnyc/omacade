@@ -604,7 +604,7 @@ class OmacadeTests(unittest.TestCase):
         # Weapon evolutions: each weapon pairs with a maxed catalyst passive to unlock a
         # one-time evolved form, tracked via a bool flag and surfaced in the HUD/level-up UI.
         self.assertIn("function announceEvolution(name)", swarm)
-        for flag in ("burstEvolved", "ringEvolved", "orbitEvolved", "chainEvolved", "mineEvolved"):
+        for flag in ("burstEvolved", "ringEvolved", "orbitEvolved", "chainEvolved", "mineEvolved", "turretEvolved"):
             self.assertIn(f"property bool {flag}: false", swarm)
         for evolve_id, catalyst_check in (
             ('id === "evolve-burst"', "burstLevel >= burstMaxLevel && speedBonus >= catalystMaxLevel"),
@@ -612,12 +612,13 @@ class OmacadeTests(unittest.TestCase):
             ('id === "evolve-orbit"', "orbitLevel >= orbitMaxLevel && slowAuraLevel >= catalystMaxLevel"),
             ('id === "evolve-chain"', "chainLevel >= chainMaxLevel && critLevel >= catalystMaxLevel"),
             ('id === "evolve-mine"', "mineLevel >= mineMaxLevel && regenLevel >= catalystMaxLevel"),
+            ('id === "evolve-turret"', "turretLevel >= turretMaxLevel && armorLevel >= catalystMaxLevel"),
         ):
             self.assertIn(evolve_id, swarm)
             self.assertIn(catalyst_check, swarm)
         # HUD status text functions surface Lv/max progress and a READY tag pre-evolution,
         # then the evolved weapon name post-evolution -- the tracking indicators requested.
-        for status_fn in ("burstStatusText", "ringStatusText", "orbitStatusText", "chainStatusText", "mineStatusText"):
+        for status_fn in ("burstStatusText", "ringStatusText", "orbitStatusText", "chainStatusText", "mineStatusText", "turretStatusText"):
             self.assertIn(f"function {status_fn}()", swarm)
         self.assertIn('ready ? "  READY" : ""', swarm)
         # Evolution cards are visually flagged on the level-up screen.
@@ -647,6 +648,16 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn('id === "unlock-turret"', swarm)
         self.assertIn('id === "turret-up"', swarm)
         self.assertIn("if (t.hp <= 0) {", swarm)
+
+        # Auto-Turret evolution (OVERWATCH PROTOCOL): closes the gap where turret was the
+        # only weapon with no catalyst/evolution pairing. Catalyst is Packet Shield (armor),
+        # matching the "hardened emplacement" theme. Evolved turrets fire twice as fast,
+        # volley every enemy in range instead of just the nearest, and take less contact damage.
+        self.assertIn('id === "evolve-turret") { turretEvolved = true; announceEvolution("OVERWATCH PROTOCOL") }', swarm)
+        self.assertIn("var fireInterval = Math.max(0.32, 1.3 - turretLevel * 0.22) * (turretEvolved ? 0.5 : 1)", swarm)
+        self.assertIn("t.hp -= en.damage * (turretEvolved ? 1.2 : 2.4) * dt", swarm)
+        self.assertIn("if (turretEvolved) {", swarm)
+        self.assertIn("evolved: true })", swarm)
 
         # Weapon/catalyst level caps raised and decoupled from evolution-readiness thresholds:
         # "-up" tracks stay in the pool forever so a build keeps growing well past wave 50.

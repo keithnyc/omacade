@@ -164,6 +164,7 @@ ShellRoot {
       property bool orbitEvolved: false
       property bool chainEvolved: false
       property bool mineEvolved: false
+      property bool turretEvolved: false
       property real burstCooldown: 0
       property real ringCooldown: 0
       property real chainCooldown: 0
@@ -378,6 +379,7 @@ ShellRoot {
         orbitEvolved = false
         chainEvolved = false
         mineEvolved = false
+        turretEvolved = false
         burstCooldown = 0
         ringCooldown = 0
         chainCooldown = 0
@@ -834,7 +836,7 @@ ShellRoot {
       function updateTurrets(dt) {
         if (turrets.length === 0) return
         var range = 170 + turretLevel * 16
-        var fireInterval = Math.max(0.32, 1.3 - turretLevel * 0.22)
+        var fireInterval = Math.max(0.32, 1.3 - turretLevel * 0.22) * (turretEvolved ? 0.5 : 1)
         var dmg = 3 + turretLevel * 3
         var active = []
         for (var i = 0; i < turrets.length; i++) {
@@ -844,7 +846,7 @@ ShellRoot {
           for (var e = 0; e < enemies.length; e++) {
             var en = enemies[e]
             var dx = en.x - t.x, dy = en.y - t.y
-            if (dx * dx + dy * dy <= (en.radius + 14) * (en.radius + 14)) t.hp -= en.damage * 2.4 * dt
+            if (dx * dx + dy * dy <= (en.radius + 14) * (en.radius + 14)) t.hp -= en.damage * (turretEvolved ? 1.2 : 2.4) * dt
           }
           if (t.hp <= 0) {
             spawnBurst(t.x, t.y, "red", 22, 210, 0.4)
@@ -856,20 +858,38 @@ ShellRoot {
             continue
           }
           if (t.fireCooldown <= 0) {
-            var target = null
-            var bestD = range * range
-            for (var j = 0; j < enemies.length; j++) {
-              var cand = enemies[j]
-              var cdx = cand.x - t.x, cdy = cand.y - t.y
-              var cd = cdx * cdx + cdy * cdy
-              if (cd < bestD) { bestD = cd; target = cand }
-            }
-            if (target) {
-              applyDamage(target, dmg, 0.14)
+            if (turretEvolved) {
+              // EVOLUTION: volley fire -- every enemy in range takes a hit each shot,
+              // instead of picking just the single nearest target.
               var updatedBeams = beams.slice(0)
-              updatedBeams.push({ x1: t.x, y1: t.y, x2: target.x, y2: target.y, life: 0, duration: 0.12 })
+              var hitAny = false
+              for (var j = 0; j < enemies.length; j++) {
+                var cand = enemies[j]
+                var cdx = cand.x - t.x, cdy = cand.y - t.y
+                if (cdx * cdx + cdy * cdy <= range * range) {
+                  applyDamage(cand, dmg, 0.14)
+                  updatedBeams.push({ x1: t.x, y1: t.y, x2: cand.x, y2: cand.y, life: 0, duration: 0.12, evolved: true })
+                  hitAny = true
+                }
+              }
               beams = updatedBeams
-              shell.play(hitSound)
+              if (hitAny) shell.play(hitSound)
+            } else {
+              var target = null
+              var bestD = range * range
+              for (var j2 = 0; j2 < enemies.length; j2++) {
+                var cand2 = enemies[j2]
+                var cdx2 = cand2.x - t.x, cdy2 = cand2.y - t.y
+                var cd = cdx2 * cdx2 + cdy2 * cdy2
+                if (cd < bestD) { bestD = cd; target = cand2 }
+              }
+              if (target) {
+                applyDamage(target, dmg, 0.14)
+                var singleBeam = beams.slice(0)
+                singleBeam.push({ x1: t.x, y1: t.y, x2: target.x, y2: target.y, life: 0, duration: 0.12 })
+                beams = singleBeam
+                shell.play(hitSound)
+              }
             }
             t.fireCooldown = fireInterval
           }
@@ -890,7 +910,9 @@ ShellRoot {
 
       function turretStatusText() {
         if (turretLevel === 0) return "TURRET --"
-        return "TURRET " + levelTag(turretLevel, turretMaxLevel) + "  x" + turretCap
+        if (turretEvolved) return "TURRET OVERWATCH PROTOCOL  " + levelTag(turretLevel, turretMaxLevel) + "  x" + turretCap
+        var ready = turretLevel >= turretMaxLevel && armorLevel >= catalystMaxLevel
+        return "TURRET " + levelTag(turretLevel, turretMaxLevel) + "  x" + turretCap + (ready ? "  READY" : "")
       }
 
       function updateChains(dt) {
@@ -1209,6 +1231,8 @@ ShellRoot {
           pool.push({ id: "evolve-chain", title: "ARC CASCADE", detail: "EVOLUTION: Traceroute Arc always crits and chains to every threat." })
         if (!mineEvolved && mineLevel >= mineMaxLevel && regenLevel >= catalystMaxLevel)
           pool.push({ id: "evolve-mine", title: "MINEFIELD PROTOCOL", detail: "EVOLUTION: Honeypot Mine redeploys instantly and always cascades." })
+        if (!turretEvolved && turretLevel >= turretMaxLevel && armorLevel >= catalystMaxLevel)
+          pool.push({ id: "evolve-turret", title: "OVERWATCH PROTOCOL", detail: "EVOLUTION: Auto-Turret fires twice as fast, volleys every threat in range, and shrugs off contact damage." })
         return pool
       }
 
@@ -1281,6 +1305,7 @@ ShellRoot {
         else if (id === "evolve-orbit") { orbitEvolved = true; announceEvolution("ORBIT STORM") }
         else if (id === "evolve-chain") { chainEvolved = true; announceEvolution("ARC CASCADE") }
         else if (id === "evolve-mine") { mineEvolved = true; announceEvolution("MINEFIELD PROTOCOL") }
+        else if (id === "evolve-turret") { turretEvolved = true; announceEvolution("OVERWATCH PROTOCOL") }
         upgradeChoices = []
         mode = "playing"
       }
@@ -1952,7 +1977,7 @@ ShellRoot {
                 var turret = game.turrets[tui]
                 var turretHpRatio = Math.max(0, turret.hp / turret.maxHp)
                 context.globalAlpha = 0.85
-                context.fillStyle = theme.accent
+                context.fillStyle = game.turretEvolved ? theme.yellow : theme.accent
                 context.beginPath(); context.arc(turret.x, turret.y, 10, 0, Math.PI * 2); context.fill()
                 context.strokeStyle = theme.foreground
                 context.lineWidth = 1.6
@@ -1971,7 +1996,7 @@ ShellRoot {
                 var beam = game.beams[bmi]
                 var beamAlpha = Math.max(0, 1 - beam.life / beam.duration)
                 context.globalAlpha = beamAlpha
-                context.strokeStyle = theme.red
+                context.strokeStyle = beam.evolved ? theme.yellow : theme.red
                 context.lineWidth = 2.6
                 context.beginPath(); context.moveTo(beam.x1, beam.y1); context.lineTo(beam.x2, beam.y2); context.stroke()
                 context.globalAlpha = beamAlpha * 0.6
@@ -2192,7 +2217,7 @@ ShellRoot {
               Text { text: game.orbitStatusText(); color: game.orbitEvolved ? theme.yellow : (game.orbitLevel > 0 ? theme.green : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Text { text: game.chainStatusText(); color: game.chainEvolved ? theme.accent : (game.chainLevel > 0 ? theme.yellow : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Text { text: game.mineStatusText(); color: game.mineEvolved ? theme.yellow : (game.mineLevel > 0 ? theme.orange : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
-              Text { text: game.turretStatusText(); color: game.turretLevel > 0 ? theme.accent : theme.muted; font.pixelSize: 11; font.family: "monospace"; font.bold: true }
+              Text { text: game.turretStatusText(); color: game.turretEvolved ? theme.yellow : (game.turretLevel > 0 ? theme.accent : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Rectangle { visible: game.speedBonus > 0 || game.pickupBonus > 0 || game.maxHp > 5 || game.xpBonus > 0 || game.shieldBonus > 0 || game.regenLevel > 0 || game.failoverCharges > 0 || game.critLevel > 0 || game.slowAuraLevel > 0 || game.siphonLevel > 0 || game.armorLevel > 0 || game.comboLevel > 0; width: parent.width; height: 1; color: theme.muted }
               Text { visible: game.speedBonus > 0; text: "SPD    +" + (game.speedBonus * 15) + "%  " + game.levelTag(game.speedBonus, game.catalystMaxLevel); color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.pickupBonus > 0; text: "SCAN   +" + game.pickupBonus; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
