@@ -118,6 +118,13 @@ ShellRoot {
       property string modeBeforeScores: "attract"
       property real playerX: worldWidth / 2
       property real playerY: worldHeight / 2
+      readonly property real dashDuration: 0.16
+      readonly property real dashSpeedMul: 3.4
+      readonly property real dashCooldownTime: 2.4
+      property real dashTimer: 0
+      property real dashCooldown: 0
+      property real lastMoveDirX: 0
+      property real lastMoveDirY: -1
       property real cameraX: worldWidth / 2
       property real cameraY: worldHeight / 2
       property int maxHp: 5
@@ -350,6 +357,10 @@ ShellRoot {
         hp = 5
         invulnerable = 0
         elapsed = 0
+        dashTimer = 0
+        dashCooldown = 0
+        lastMoveDirX = 0
+        lastMoveDirY = -1
         level = 1
         xp = 0
         score = 0
@@ -930,17 +941,20 @@ ShellRoot {
         var dmg = 2 + boomerangLevel * 2 + (boomerangEvolved ? 3 : 0)
         var range = 220 + boomerangLevel * 18
         var updated = boomerangs.slice(0)
-        function pushBoomerang(dirX, dirY) {
+        function pushBoomerang(dirX, dirY, curveSign) {
           updated.push({ x: playerX, y: playerY, dirX: dirX, dirY: dirY, phase: "out",
-                         travelled: 0, maxRange: range, speed: 460, damage: dmg, hitIds: [], evolved: boomerangEvolved })
+                         travelled: 0, maxRange: range, speed: 460, damage: dmg, hitIds: [], evolved: boomerangEvolved,
+                         curve: curveSign })
         }
+        var curveSign = Math.random() < 0.5 ? 1 : -1
         var dx0 = target.x - playerX, dy0 = target.y - playerY
         var dist0 = Math.sqrt(dx0 * dx0 + dy0 * dy0) || 1
-        pushBoomerang(dx0 / dist0, dy0 / dist0)
+        pushBoomerang(dx0 / dist0, dy0 / dist0, curveSign)
 
         if (boomerangEvolved) {
           // EVOLUTION: a second blade goes out at the next-nearest threat (or a fanned
           // angle if there's nothing else around), and a caught blade pulses on return.
+          // It curves the opposite way from the first blade so the pair fans out visibly.
           var second = null
           var bestD = Infinity
           for (var i = 0; i < enemies.length; i++) {
@@ -953,10 +967,10 @@ ShellRoot {
           if (second) {
             var sdx = second.x - playerX, sdy = second.y - playerY
             var sdist = Math.sqrt(sdx * sdx + sdy * sdy) || 1
-            pushBoomerang(sdx / sdist, sdy / sdist)
+            pushBoomerang(sdx / sdist, sdy / sdist, -curveSign)
           } else {
             var baseAngle = Math.atan2(dy0, dx0)
-            pushBoomerang(Math.cos(baseAngle + 0.5), Math.sin(baseAngle + 0.5))
+            pushBoomerang(Math.cos(baseAngle + 0.5), Math.sin(baseAngle + 0.5), -curveSign)
           }
         }
 
@@ -970,6 +984,14 @@ ShellRoot {
         for (var i = 0; i < boomerangs.length; i++) {
           var bm = boomerangs[i]
           if (bm.phase === "out") {
+            // Curves rather than flying a straight line -- steadily rotates its heading
+            // as it travels, so it arcs outward instead of going ruler-straight.
+            var turnRate = 2.6 * bm.curve
+            var cosT = Math.cos(turnRate * dt), sinT = Math.sin(turnRate * dt)
+            var ndx = bm.dirX * cosT - bm.dirY * sinT
+            var ndy = bm.dirX * sinT + bm.dirY * cosT
+            bm.dirX = ndx
+            bm.dirY = ndy
             var step = bm.speed * dt
             bm.x += bm.dirX * step
             bm.y += bm.dirY * step
@@ -1050,11 +1072,26 @@ ShellRoot {
       }
 
       function updateMovement(dt) {
+        if (dashTimer > 0) {
+          dashTimer = Math.max(0, dashTimer - dt)
+          playerX = Math.max(playerRadius, Math.min(worldWidth - playerRadius, playerX + lastMoveDirX * moveSpeed * dashSpeedMul * dt))
+          playerY = Math.max(playerRadius, Math.min(worldHeight - playerRadius, playerY + lastMoveDirY * moveSpeed * dashSpeedMul * dt))
+          return
+        }
         var dx = (rightHeld ? 1 : 0) - (leftHeld ? 1 : 0)
         var dy = (downHeld ? 1 : 0) - (upHeld ? 1 : 0)
         if (dx !== 0 && dy !== 0) { dx *= 0.7071; dy *= 0.7071 }
+        if (dx !== 0 || dy !== 0) { lastMoveDirX = dx; lastMoveDirY = dy }
         playerX = Math.max(playerRadius, Math.min(worldWidth - playerRadius, playerX + dx * moveSpeed * dt))
         playerY = Math.max(playerRadius, Math.min(worldHeight - playerRadius, playerY + dy * moveSpeed * dt))
+      }
+
+      function attemptDash() {
+        if (dashCooldown > 0 || mode !== "playing") return
+        dashTimer = dashDuration
+        dashCooldown = dashCooldownTime
+        spawnBurst(playerX, playerY, "accent", 16, 220, 0.3)
+        spawnPop(playerX, playerY, "accent", 55, 0.25)
       }
 
       function updateCamera(dt) {
@@ -1563,6 +1600,7 @@ ShellRoot {
           comboTimer -= dt
           if (comboTimer <= 0) { comboTimer = 0; comboCount = 0 }
         }
+        dashCooldown = Math.max(0, dashCooldown - dt)
         if (regenLevel > 0 && hp < maxHp) {
           regenTimer += dt
           var regenInterval = Math.max(3, 9 - regenLevel * 1.5)
@@ -1638,6 +1676,7 @@ ShellRoot {
         else if (event.key === Qt.Key_Right || event.key === Qt.Key_D) rightHeld = true
         else if (event.key === Qt.Key_Up || event.key === Qt.Key_W) upHeld = true
         else if (event.key === Qt.Key_Down || event.key === Qt.Key_S) downHeld = true
+        else if (event.key === Qt.Key_Space) attemptDash()
         else if (event.key === Qt.Key_P) mode = "paused"
         else if (event.key === Qt.Key_H) openScores()
         else if (event.key === Qt.Key_R) startRun()
@@ -2390,7 +2429,7 @@ ShellRoot {
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "ELITES CAN BE SHIELDED, FAST, OR VOLATILE  ·  RARE MAGNET PACKETS SWEEP THE FIELD"; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "MINI-BOSSES GROW MORE UNPREDICTABLE AT HIGH WAVES  ·  DEPLOY AN AUTO-TURRET FOR COVERING FIRE"; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "EXPLORE FOR ROOTKIT LAIRS, SIGNAL RELAYS, AND BACKUP SERVERS  ·  FOLLOW THE EDGE ARROWS"; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
-              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "← ↑ ↓ → / WASD MOVE"; color: theme.muted; font.pixelSize: 11; font.family: "monospace" }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "← ↑ ↓ → / WASD MOVE   ·   SPACE TO DASH"; color: theme.muted; font.pixelSize: 11; font.family: "monospace" }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "BEST " + arcadeData.bestScore + "   ·   FURTHEST WAVE " + arcadeData.highestStage; color: theme.yellow; font.pixelSize: 13; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "PRESS ENTER TO BOOT"; color: theme.accent; font.pixelSize: 18; font.family: "monospace"; font.bold: true
                 SequentialAnimation on opacity {
@@ -2560,7 +2599,7 @@ ShellRoot {
           border.width: 1
           Text {
             anchors.centerIn: parent
-            text: "← ↑ ↓ → / WASD MOVE    AUTO-FIRE    P PAUSE    H RECORDS    Q QUIT"
+            text: "← ↑ ↓ → / WASD MOVE    SPACE DASH    AUTO-FIRE    P PAUSE    H RECORDS    Q QUIT"
             color: theme.muted; font.pixelSize: 10; font.family: "monospace"; font.bold: true
           }
         }

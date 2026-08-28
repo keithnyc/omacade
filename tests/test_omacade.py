@@ -675,6 +675,29 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn('id === "evolve-boomerang") { boomerangEvolved = true; announceEvolution("ECHO STORM") }', swarm)
         self.assertIn("var dmg = 2 + boomerangLevel * 2 + (boomerangEvolved ? 3 : 0)", swarm)
 
+        # Ping Boomerang follow-up: give it a curve instead of a straight-line throw. Each
+        # blade steadily rotates its own heading while outbound (opposite curve direction for
+        # the evolved pair, so they fan apart), then the existing homing return leg curves it
+        # naturally back into the player.
+        self.assertIn("var curveSign = Math.random() < 0.5 ? 1 : -1", swarm)
+        self.assertIn("pushBoomerang(dx0 / dist0, dy0 / dist0, curveSign)", swarm)
+        self.assertIn("pushBoomerang(sdx / sdist, sdy / sdist, -curveSign)", swarm)
+        self.assertIn("var turnRate = 2.6 * bm.curve", swarm)
+        self.assertIn("bm.dirX = ndx", swarm)
+
+        # Dash: quick speed burst on Space, in the player's current/last movement direction,
+        # with a cooldown -- requested directly after a play session ("give myself a quick
+        # boost in speed... like a dash... cooldown of course").
+        self.assertIn("readonly property real dashDuration: 0.16", swarm)
+        self.assertIn("readonly property real dashSpeedMul: 3.4", swarm)
+        self.assertIn("readonly property real dashCooldownTime: 2.4", swarm)
+        self.assertIn("function attemptDash()", swarm)
+        self.assertIn("if (dashCooldown > 0 || mode !== \"playing\") return", swarm)
+        self.assertIn("event.key === Qt.Key_Space) attemptDash()", swarm)
+        self.assertIn("playerX + lastMoveDirX * moveSpeed * dashSpeedMul * dt", swarm)
+        self.assertIn("dashCooldown = Math.max(0, dashCooldown - dt)", swarm)
+        self.assertIn("SPACE DASH", swarm)
+
         # Weapon/catalyst level caps raised and decoupled from evolution-readiness thresholds:
         # "-up" tracks stay in the pool forever so a build keeps growing well past wave 50.
         for const_name, value in (
