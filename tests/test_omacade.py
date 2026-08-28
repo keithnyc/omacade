@@ -604,7 +604,7 @@ class OmacadeTests(unittest.TestCase):
         # Weapon evolutions: each weapon pairs with a maxed catalyst passive to unlock a
         # one-time evolved form, tracked via a bool flag and surfaced in the HUD/level-up UI.
         self.assertIn("function announceEvolution(name)", swarm)
-        for flag in ("burstEvolved", "ringEvolved", "orbitEvolved", "chainEvolved", "mineEvolved", "turretEvolved", "boomerangEvolved"):
+        for flag in ("burstEvolved", "ringEvolved", "orbitEvolved", "chainEvolved", "mineEvolved", "turretEvolved", "boomerangEvolved", "missileEvolved"):
             self.assertIn(f"property bool {flag}: false", swarm)
         for evolve_id, catalyst_check in (
             ('id === "evolve-burst"', "burstLevel >= burstMaxLevel && speedBonus >= catalystMaxLevel"),
@@ -614,12 +614,13 @@ class OmacadeTests(unittest.TestCase):
             ('id === "evolve-mine"', "mineLevel >= mineMaxLevel && regenLevel >= catalystMaxLevel"),
             ('id === "evolve-turret"', "turretLevel >= turretMaxLevel && armorLevel >= catalystMaxLevel"),
             ('id === "evolve-boomerang"', "boomerangLevel >= boomerangMaxLevel && comboLevel >= catalystMaxLevel"),
+            ('id === "evolve-missile"', "missileLevel >= missileMaxLevel && siphonLevel >= catalystMaxLevel"),
         ):
             self.assertIn(evolve_id, swarm)
             self.assertIn(catalyst_check, swarm)
         # HUD status text functions surface Lv/max progress and a READY tag pre-evolution,
         # then the evolved weapon name post-evolution -- the tracking indicators requested.
-        for status_fn in ("burstStatusText", "ringStatusText", "orbitStatusText", "chainStatusText", "mineStatusText", "turretStatusText", "boomerangStatusText"):
+        for status_fn in ("burstStatusText", "ringStatusText", "orbitStatusText", "chainStatusText", "mineStatusText", "turretStatusText", "boomerangStatusText", "missileStatusText"):
             self.assertIn(f"function {status_fn}()", swarm)
         self.assertIn('ready ? "  READY" : ""', swarm)
         # Evolution cards are visually flagged on the level-up screen.
@@ -710,6 +711,25 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn('else if (event.key === Qt.Key_I && mode === "attract") showInstructions = true', swarm)
         self.assertIn("if (event.key === Qt.Key_I || event.key === Qt.Key_Escape || event.key === Qt.Key_Return || event.key === Qt.Key_Enter) showInstructions = false", swarm)
         self.assertIn("showInstructions = false", swarm)
+
+        # Payload Missile: eighth weapon, requested directly -- a slow heat-seeking missile
+        # with an AoE payload, where upgrades raise both missile count and blast radius.
+        # Catalyst is Data Siphon; evolution (SATURATION STRIKE) adds two extra warheads,
+        # a bigger/harder blast, and a faster reload.
+        self.assertIn("function fireMissiles()", swarm)
+        self.assertIn("function updateMissiles(dt)", swarm)
+        self.assertIn("function nearestEnemyTo(x, y)", swarm)
+        self.assertIn('id === "unlock-missile"', swarm)
+        self.assertIn('id === "missile-up"', swarm)
+        self.assertIn("readonly property int missileMaxLevel: 8", swarm)
+        self.assertIn("readonly property int missileCount: Math.min(5, 1 + Math.floor(missileLevel / 2))", swarm)
+        self.assertIn("readonly property real missileSpeed: 230", swarm)
+        self.assertIn("readonly property real missileTurnRate: 3.2", swarm)
+        self.assertIn("var count = missileCount + (missileEvolved ? 2 : 0)", swarm)
+        self.assertIn("var blastRadius = (50 + missileLevel * 8) * (missileEvolved ? 1.4 : 1)", swarm)
+        self.assertIn("var blastDamage = (3 + missileLevel * 2) + (missileEvolved ? 4 : 0)", swarm)
+        self.assertIn("var maxTurn = missileTurnRate * dt", swarm)
+        self.assertIn('id === "evolve-missile") { missileEvolved = true; announceEvolution("SATURATION STRIKE") }', swarm)
 
         # Weapon/catalyst level caps raised and decoupled from evolution-readiness thresholds:
         # "-up" tracks stay in the pool forever so a build keeps growing well past wave 50.

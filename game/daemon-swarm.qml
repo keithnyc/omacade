@@ -78,6 +78,7 @@ ShellRoot {
       readonly property int mineMaxLevel: 8
       readonly property int turretMaxLevel: 8
       readonly property int boomerangMaxLevel: 8
+      readonly property int missileMaxLevel: 8
       readonly property int catalystMaxLevel: 10
       // Unlike the thresholds above, these ARE hard caps -- they bound how many simultaneous
       // bolts/mines/turrets can exist at once, which is what actually drives per-frame cost.
@@ -87,6 +88,11 @@ ShellRoot {
       readonly property int mineCapBonusMax: 6
       readonly property int mineCap: 2 + Math.min(mineCapBonus, mineCapBonusMax)
       readonly property int turretCap: Math.min(6, 1 + Math.floor(turretLevel / 2))
+      // "Not too fast" per request -- much slower than any of the other projectiles so it
+      // reads as a lumbering, guided munition rather than another bolt.
+      readonly property real missileSpeed: 230
+      readonly property real missileTurnRate: 3.2
+      readonly property int missileCount: Math.min(5, 1 + Math.floor(missileLevel / 2))
       readonly property real slowAuraRadius: 70 + slowAuraLevel * 22
       readonly property real siphonChance: siphonLevel * 0.06
       // Capped well short of 100% -- this blunts damage, it shouldn't make hits free. The
@@ -155,6 +161,8 @@ ShellRoot {
       property real turretCooldown: 0
       property int boomerangLevel: 0
       property real boomerangCooldown: 0
+      property int missileLevel: 0
+      property real missileCooldown: 0
       property int speedBonus: 0
       property int pickupBonus: 0
       property int xpBonus: 0
@@ -177,6 +185,7 @@ ShellRoot {
       property bool mineEvolved: false
       property bool turretEvolved: false
       property bool boomerangEvolved: false
+      property bool missileEvolved: false
       property real burstCooldown: 0
       property real ringCooldown: 0
       property real chainCooldown: 0
@@ -204,6 +213,7 @@ ShellRoot {
       property var turrets: []
       property var beams: []
       property var boomerangs: []
+      property var missiles: []
       property var pops: []
       property var particles: []
       property var damageNumbers: []
@@ -291,6 +301,14 @@ ShellRoot {
         if (boomerangEvolved) return "PING   ECHO STORM  " + levelTag(boomerangLevel, boomerangMaxLevel)
         var ready = boomerangLevel >= boomerangMaxLevel && comboLevel >= catalystMaxLevel
         return "PING   " + levelTag(boomerangLevel, boomerangMaxLevel) + (ready ? "  READY" : "")
+      }
+
+      function missileStatusText() {
+        if (missileLevel === 0) return "MSL    --"
+        var count = missileCount + (missileEvolved ? 2 : 0)
+        if (missileEvolved) return "MSL    SATURATION STRIKE  " + levelTag(missileLevel, missileMaxLevel) + "  x" + count
+        var ready = missileLevel >= missileMaxLevel && siphonLevel >= catalystMaxLevel
+        return "MSL    " + levelTag(missileLevel, missileMaxLevel) + "  x" + count + (ready ? "  READY" : "")
       }
 
       function mineStatusText() {
@@ -385,6 +403,8 @@ ShellRoot {
         turretCooldown = 0
         boomerangLevel = 0
         boomerangCooldown = 0
+        missileLevel = 0
+        missileCooldown = 0
         speedBonus = 0
         pickupBonus = 0
         xpBonus = 0
@@ -407,6 +427,7 @@ ShellRoot {
         mineEvolved = false
         turretEvolved = false
         boomerangEvolved = false
+        missileEvolved = false
         burstCooldown = 0
         ringCooldown = 0
         chainCooldown = 0
@@ -424,6 +445,7 @@ ShellRoot {
         turrets = []
         beams = []
         boomerangs = []
+        missiles = []
         pops = []
         particles = []
         damageNumbers = []
@@ -637,6 +659,19 @@ ShellRoot {
           var e = enemies[i]
           var dx = e.x - playerX
           var dy = e.y - playerY
+          var d = dx * dx + dy * dy
+          if (d < bestDist) { bestDist = d; best = e }
+        }
+        return best
+      }
+
+      function nearestEnemyTo(x, y) {
+        var best = null
+        var bestDist = Infinity
+        for (var i = 0; i < enemies.length; i++) {
+          var e = enemies[i]
+          var dx = e.x - x
+          var dy = e.y - y
           var d = dx * dx + dy * dy
           if (d < bestDist) { bestDist = d; best = e }
         }
@@ -1031,6 +1066,86 @@ ShellRoot {
         boomerangs = active
       }
 
+      function fireMissiles() {
+        if (enemies.length === 0) return
+        var candidates = enemies.slice(0).sort(function(a, b) {
+          var da = (a.x - playerX) * (a.x - playerX) + (a.y - playerY) * (a.y - playerY)
+          var db = (b.x - playerX) * (b.x - playerX) + (b.y - playerY) * (b.y - playerY)
+          return da - db
+        })
+        var count = missileCount + (missileEvolved ? 2 : 0)
+        var updated = missiles.slice(0)
+        for (var i = 0; i < count; i++) {
+          var target = candidates[i % candidates.length]
+          var dx = target.x - playerX, dy = target.y - playerY
+          var dist = Math.sqrt(dx * dx + dy * dy) || 1
+          // Fan the launch angle per warhead so a multi-missile volley doesn't stack visually.
+          var spread = (i - (count - 1) / 2) * 0.35
+          var baseAngle = Math.atan2(dy, dx) + spread
+          updated.push({ x: playerX, y: playerY, dirX: Math.cos(baseAngle), dirY: Math.sin(baseAngle),
+                         targetId: target.id, life: 0, maxLife: 2.8, evolved: missileEvolved })
+        }
+        missiles = updated
+        spawnBurst(playerX, playerY, "orange", 5, 140, 0.16)
+        missileCooldown = missileEvolved ? Math.max(0.6, (2.6 - missileLevel * 0.15) * 0.6) : Math.max(1.1, 2.6 - missileLevel * 0.15)
+      }
+
+      function updateMissiles(dt) {
+        var blastRadius = (50 + missileLevel * 8) * (missileEvolved ? 1.4 : 1)
+        var blastDamage = (3 + missileLevel * 2) + (missileEvolved ? 4 : 0)
+        var active = []
+        for (var i = 0; i < missiles.length; i++) {
+          var m = missiles[i]
+          m.life += dt
+          var target = null
+          for (var e = 0; e < enemies.length; e++) { if (enemies[e].id === m.targetId) { target = enemies[e]; break } }
+          if (!target) target = nearestEnemyTo(m.x, m.y)
+          if (target) {
+            m.targetId = target.id
+            var tdx = target.x - m.x, tdy = target.y - m.y
+            var tdist = Math.sqrt(tdx * tdx + tdy * tdy) || 1
+            var desiredX = tdx / tdist, desiredY = tdy / tdist
+            // Turn-rate-limited steering (not an instant snap) -- this is what makes it read
+            // as heat-seeking rather than a bolt that's merely re-aimed every frame.
+            var cross = m.dirX * desiredY - m.dirY * desiredX
+            var dot = m.dirX * desiredX + m.dirY * desiredY
+            var angle = Math.atan2(cross, dot)
+            var maxTurn = missileTurnRate * dt
+            var step = Math.max(-maxTurn, Math.min(maxTurn, angle))
+            var cosS = Math.cos(step), sinS = Math.sin(step)
+            var ndx = m.dirX * cosS - m.dirY * sinS
+            var ndy = m.dirX * sinS + m.dirY * cosS
+            m.dirX = ndx
+            m.dirY = ndy
+          }
+          m.x += m.dirX * missileSpeed * dt
+          m.y += m.dirY * missileSpeed * dt
+
+          var detonate = m.life >= m.maxLife
+          if (!detonate) {
+            for (var ei = 0; ei < enemies.length; ei++) {
+              var en = enemies[ei]
+              var hdx = en.x - m.x, hdy = en.y - m.y
+              if (hdx * hdx + hdy * hdy <= (en.radius + 10) * (en.radius + 10)) { detonate = true; break }
+            }
+          }
+          if (detonate) {
+            for (var bi = 0; bi < enemies.length; bi++) {
+              var bt = enemies[bi]
+              var bdx = bt.x - m.x, bdy = bt.y - m.y
+              if (bdx * bdx + bdy * bdy <= blastRadius * blastRadius) applyDamage(bt, blastDamage, 0.14)
+            }
+            spawnBurst(m.x, m.y, m.evolved ? "yellow" : "orange", 26, 230, 0.5)
+            spawnPop(m.x, m.y, m.evolved ? "yellow" : "orange", blastRadius, 0.4)
+            spawnShake(5, 0.18)
+            shell.play(hitSound)
+            continue
+          }
+          active.push(m)
+        }
+        missiles = active
+      }
+
       function turretStatusText() {
         if (turretLevel === 0) return "TURRET --"
         if (turretEvolved) return "TURRET OVERWATCH PROTOCOL  " + levelTag(turretLevel, turretMaxLevel) + "  x" + turretCap
@@ -1070,6 +1185,10 @@ ShellRoot {
         if (boomerangLevel > 0) {
           boomerangCooldown = Math.max(0, boomerangCooldown - dt)
           if (boomerangCooldown <= 0) fireBoomerang()
+        }
+        if (missileLevel > 0) {
+          missileCooldown = Math.max(0, missileCooldown - dt)
+          if (missileCooldown <= 0) fireMissiles()
         }
       }
 
@@ -1340,6 +1459,7 @@ ShellRoot {
         if (mineLevel === 0) pool.push({ id: "unlock-mine", title: "HONEYPOT MINE", detail: "Unlock a proximity trap that detonates on contact." })
         if (turretLevel === 0) pool.push({ id: "unlock-turret", title: "AUTO-TURRET", detail: "Deploy a stationary turret that lasers nearby threats." })
         if (boomerangLevel === 0) pool.push({ id: "unlock-boomerang", title: "PING BOOMERANG", detail: "Unlock a packet that flies out, pierces threats, and returns to you." })
+        if (missileLevel === 0) pool.push({ id: "unlock-missile", title: "PAYLOAD MISSILE", detail: "Unlock a slow heat-seeking missile with an explosive AoE payload." })
         if (ringLevel > 0) pool.push({ id: "ring-up", title: "RING OVERCLOCK", detail: "Firewall Ring: +radius, +damage, faster pulse." })
         if (orbitLevel > 0) pool.push({ id: "orbit-up", title: "ORBIT SHARD", detail: orbitLevel < orbitShardCap ? "Patch Orbit: +1 shard." : "Patch Orbit: +damage per shard (shard count capped)." })
         if (orbitLevel > 0) pool.push({ id: "orbit-range-up", title: "ORBIT EXPANSE", detail: "Patch Orbit: shards orbit further out." })
@@ -1349,6 +1469,7 @@ ShellRoot {
         if (mineLevel > 0 && !mineCascade && !mineEvolved) pool.push({ id: "mine-cascade", title: "CASCADE TRIGGER", detail: "Honeypot Mine: blasts also detonate nearby mines." })
         if (turretLevel > 0) pool.push({ id: "turret-up", title: "TURRET OVERCLOCK", detail: "Auto-Turret: +damage, +range, faster fire and redeploy." })
         if (boomerangLevel > 0) pool.push({ id: "boomerang-up", title: "PING OVERCLOCK", detail: "Ping Boomerang: +damage, +range, faster throw." })
+        if (missileLevel > 0) pool.push({ id: "missile-up", title: "PAYLOAD OVERCLOCK", detail: "Payload Missile: +missile count, +blast radius, +damage." })
         pool.push({ id: "burst-up", title: "PACKET OVERCLOCK", detail: "Packet Burst: faster fire, +pierce, +damage." })
         if (burstMultiLevel < burstMultiCap) pool.push({ id: "burst-multi-up", title: "PACKET FORK", detail: "Packet Burst: +1 simultaneous target." })
         if (burstSpreadLevel < burstSpreadCap) pool.push({ id: "burst-spread-up", title: "SPREAD ROUTING", detail: "Packet Burst: +2 angled bolts per shot." })
@@ -1379,6 +1500,8 @@ ShellRoot {
           pool.push({ id: "evolve-turret", title: "OVERWATCH PROTOCOL", detail: "EVOLUTION: Auto-Turret fires twice as fast, volleys every threat in range, and shrugs off contact damage." })
         if (!boomerangEvolved && boomerangLevel >= boomerangMaxLevel && comboLevel >= catalystMaxLevel)
           pool.push({ id: "evolve-boomerang", title: "ECHO STORM", detail: "EVOLUTION: Ping Boomerang throws a second blade and detonates on the catch." })
+        if (!missileEvolved && missileLevel >= missileMaxLevel && siphonLevel >= catalystMaxLevel)
+          pool.push({ id: "evolve-missile", title: "SATURATION STRIKE", detail: "EVOLUTION: Payload Missile launches two extra warheads, blasts wider and harder, and reloads faster." })
         return pool
       }
 
@@ -1424,6 +1547,7 @@ ShellRoot {
         else if (id === "unlock-mine") { mineLevel = 1; mineCooldown = 1.2 }
         else if (id === "unlock-turret") { turretLevel = 1; turretCooldown = 1.5 }
         else if (id === "unlock-boomerang") { boomerangLevel = 1; boomerangCooldown = 1.0 }
+        else if (id === "unlock-missile") { missileLevel = 1; missileCooldown = 1.4 }
         else if (id === "ring-up") ringLevel += 1
         else if (id === "orbit-up") orbitLevel += 1
         else if (id === "orbit-range-up") orbitRangeLevel += 1
@@ -1433,6 +1557,7 @@ ShellRoot {
         else if (id === "mine-cascade") mineCascade = true
         else if (id === "turret-up") turretLevel += 1
         else if (id === "boomerang-up") boomerangLevel += 1
+        else if (id === "missile-up") missileLevel += 1
         else if (id === "burst-up") burstLevel += 1
         else if (id === "burst-multi-up") burstMultiLevel += 1
         else if (id === "burst-spread-up") burstSpreadLevel += 1
@@ -1455,6 +1580,7 @@ ShellRoot {
         else if (id === "evolve-mine") { mineEvolved = true; announceEvolution("MINEFIELD PROTOCOL") }
         else if (id === "evolve-turret") { turretEvolved = true; announceEvolution("OVERWATCH PROTOCOL") }
         else if (id === "evolve-boomerang") { boomerangEvolved = true; announceEvolution("ECHO STORM") }
+        else if (id === "evolve-missile") { missileEvolved = true; announceEvolution("SATURATION STRIKE") }
         upgradeChoices = []
         mode = "playing"
       }
@@ -1496,6 +1622,7 @@ ShellRoot {
         rings = []
         chains = []
         boomerangs = []
+        missiles = []
         mode = "wavecomplete"
         waveTransitionLife = 2.0
         spawnBurst(playerX, playerY, "accent", 30, 200, 0.6)
@@ -1619,6 +1746,7 @@ ShellRoot {
         updateTurrets(dt)
         updateBeams(dt)
         updateBoomerangs(dt)
+        updateMissiles(dt)
         updateEnemies(dt)
         if (mode !== "playing") return
         if (waveKills >= waveKillTarget) { completeWave(); return }
@@ -2133,6 +2261,28 @@ ShellRoot {
               }
               context.globalAlpha = 1
 
+              for (var msi = 0; msi < game.missiles.length; msi++) {
+                var ms = game.missiles[msi]
+                var msCol = ms.evolved ? theme.yellow : theme.orange
+                var msAngle = Math.atan2(ms.dirY, ms.dirX)
+                context.save()
+                context.translate(ms.x, ms.y)
+                context.rotate(msAngle)
+                context.globalAlpha = 0.3
+                context.strokeStyle = msCol
+                context.lineWidth = 7
+                context.beginPath(); context.moveTo(-14, 0); context.lineTo(-2, 0); context.stroke()
+                context.globalAlpha = 1
+                context.fillStyle = msCol
+                context.beginPath()
+                context.moveTo(9, 0); context.lineTo(-4, 4); context.lineTo(-4, -4); context.closePath(); context.fill()
+                context.strokeStyle = theme.foreground
+                context.lineWidth = 1
+                context.stroke()
+                context.restore()
+              }
+              context.globalAlpha = 1
+
               for (var mi = 0; mi < game.mines.length; mi++) {
                 var mine = game.mines[mi]
                 var mineCol = mine.evolved ? theme.yellow : theme.orange
@@ -2398,6 +2548,7 @@ ShellRoot {
               Text { text: game.mineStatusText(); color: game.mineEvolved ? theme.yellow : (game.mineLevel > 0 ? theme.orange : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Text { text: game.turretStatusText(); color: game.turretEvolved ? theme.yellow : (game.turretLevel > 0 ? theme.accent : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Text { text: game.boomerangStatusText(); color: game.boomerangEvolved ? theme.yellow : (game.boomerangLevel > 0 ? theme.accent : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
+              Text { text: game.missileStatusText(); color: game.missileEvolved ? theme.yellow : (game.missileLevel > 0 ? theme.orange : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Rectangle { visible: game.speedBonus > 0 || game.pickupBonus > 0 || game.maxHp > 5 || game.xpBonus > 0 || game.shieldBonus > 0 || game.regenLevel > 0 || game.failoverCharges > 0 || game.critLevel > 0 || game.slowAuraLevel > 0 || game.siphonLevel > 0 || game.armorLevel > 0 || game.comboLevel > 0; width: parent.width; height: 1; color: theme.muted }
               Text { visible: game.speedBonus > 0; text: "SPD    +" + (game.speedBonus * 15) + "%  " + game.levelTag(game.speedBonus, game.catalystMaxLevel); color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.pickupBonus > 0; text: "SCAN   +" + game.pickupBonus; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
