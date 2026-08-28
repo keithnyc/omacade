@@ -77,6 +77,7 @@ ShellRoot {
       readonly property int chainMaxLevel: 8
       readonly property int mineMaxLevel: 8
       readonly property int turretMaxLevel: 8
+      readonly property int boomerangMaxLevel: 8
       readonly property int catalystMaxLevel: 10
       // Unlike the thresholds above, these ARE hard caps -- they bound how many simultaneous
       // bolts/mines/turrets can exist at once, which is what actually drives per-frame cost.
@@ -144,6 +145,8 @@ ShellRoot {
       property int mineCapBonus: 0
       property int turretLevel: 0
       property real turretCooldown: 0
+      property int boomerangLevel: 0
+      property real boomerangCooldown: 0
       property int speedBonus: 0
       property int pickupBonus: 0
       property int xpBonus: 0
@@ -165,6 +168,7 @@ ShellRoot {
       property bool chainEvolved: false
       property bool mineEvolved: false
       property bool turretEvolved: false
+      property bool boomerangEvolved: false
       property real burstCooldown: 0
       property real ringCooldown: 0
       property real chainCooldown: 0
@@ -191,6 +195,7 @@ ShellRoot {
       property var chains: []
       property var turrets: []
       property var beams: []
+      property var boomerangs: []
       property var pops: []
       property var particles: []
       property var damageNumbers: []
@@ -271,6 +276,13 @@ ShellRoot {
         if (chainEvolved) return "ARC    ARC CASCADE  " + levelTag(chainLevel, chainMaxLevel)
         var ready = chainLevel >= chainMaxLevel && critLevel >= catalystMaxLevel
         return "ARC    " + levelTag(chainLevel, chainMaxLevel) + (ready ? "  READY" : "")
+      }
+
+      function boomerangStatusText() {
+        if (boomerangLevel === 0) return "PING   --"
+        if (boomerangEvolved) return "PING   ECHO STORM  " + levelTag(boomerangLevel, boomerangMaxLevel)
+        var ready = boomerangLevel >= boomerangMaxLevel && comboLevel >= catalystMaxLevel
+        return "PING   " + levelTag(boomerangLevel, boomerangMaxLevel) + (ready ? "  READY" : "")
       }
 
       function mineStatusText() {
@@ -359,6 +371,8 @@ ShellRoot {
         mineCapBonus = 0
         turretLevel = 0
         turretCooldown = 0
+        boomerangLevel = 0
+        boomerangCooldown = 0
         speedBonus = 0
         pickupBonus = 0
         xpBonus = 0
@@ -380,6 +394,7 @@ ShellRoot {
         chainEvolved = false
         mineEvolved = false
         turretEvolved = false
+        boomerangEvolved = false
         burstCooldown = 0
         ringCooldown = 0
         chainCooldown = 0
@@ -396,6 +411,7 @@ ShellRoot {
         chains = []
         turrets = []
         beams = []
+        boomerangs = []
         pops = []
         particles = []
         damageNumbers = []
@@ -908,6 +924,89 @@ ShellRoot {
         beams = active
       }
 
+      function fireBoomerang() {
+        var target = nearestEnemy()
+        if (!target) return
+        var dmg = 2 + boomerangLevel * 2 + (boomerangEvolved ? 3 : 0)
+        var range = 220 + boomerangLevel * 18
+        var updated = boomerangs.slice(0)
+        function pushBoomerang(dirX, dirY) {
+          updated.push({ x: playerX, y: playerY, dirX: dirX, dirY: dirY, phase: "out",
+                         travelled: 0, maxRange: range, speed: 460, damage: dmg, hitIds: [], evolved: boomerangEvolved })
+        }
+        var dx0 = target.x - playerX, dy0 = target.y - playerY
+        var dist0 = Math.sqrt(dx0 * dx0 + dy0 * dy0) || 1
+        pushBoomerang(dx0 / dist0, dy0 / dist0)
+
+        if (boomerangEvolved) {
+          // EVOLUTION: a second blade goes out at the next-nearest threat (or a fanned
+          // angle if there's nothing else around), and a caught blade pulses on return.
+          var second = null
+          var bestD = Infinity
+          for (var i = 0; i < enemies.length; i++) {
+            var cand = enemies[i]
+            if (cand.id === target.id) continue
+            var cdx = cand.x - playerX, cdy = cand.y - playerY
+            var cd = cdx * cdx + cdy * cdy
+            if (cd < bestD) { bestD = cd; second = cand }
+          }
+          if (second) {
+            var sdx = second.x - playerX, sdy = second.y - playerY
+            var sdist = Math.sqrt(sdx * sdx + sdy * sdy) || 1
+            pushBoomerang(sdx / sdist, sdy / sdist)
+          } else {
+            var baseAngle = Math.atan2(dy0, dx0)
+            pushBoomerang(Math.cos(baseAngle + 0.5), Math.sin(baseAngle + 0.5))
+          }
+        }
+
+        boomerangs = updated
+        spawnBurst(playerX, playerY, "yellow", 4, 150, 0.16)
+        boomerangCooldown = boomerangEvolved ? Math.max(0.5, (2.3 - boomerangLevel * 0.18) * 0.55) : Math.max(0.9, 2.3 - boomerangLevel * 0.18)
+      }
+
+      function updateBoomerangs(dt) {
+        var active = []
+        for (var i = 0; i < boomerangs.length; i++) {
+          var bm = boomerangs[i]
+          if (bm.phase === "out") {
+            var step = bm.speed * dt
+            bm.x += bm.dirX * step
+            bm.y += bm.dirY * step
+            bm.travelled += step
+            if (bm.travelled >= bm.maxRange) { bm.phase = "back"; bm.hitIds = [] }
+          } else {
+            var rdx = playerX - bm.x, rdy = playerY - bm.y
+            var rdist = Math.sqrt(rdx * rdx + rdy * rdy) || 1
+            var rstep = bm.speed * dt
+            if (rdist <= Math.max(24, rstep)) {
+              if (bm.evolved) {
+                for (var e = 0; e < enemies.length; e++) {
+                  var en = enemies[e]
+                  var edx = en.x - playerX, edy = en.y - playerY
+                  if (edx * edx + edy * edy <= 90 * 90) applyDamage(en, bm.damage * 0.6, 0.12)
+                }
+                spawnPop(playerX, playerY, "yellow", 60, 0.3)
+              }
+              continue
+            }
+            bm.x += rdx / rdist * rstep
+            bm.y += rdy / rdist * rstep
+          }
+          for (var ei = 0; ei < enemies.length; ei++) {
+            var t = enemies[ei]
+            var hdx = t.x - bm.x, hdy = t.y - bm.y
+            if (hdx * hdx + hdy * hdy <= (t.radius + 10) * (t.radius + 10) && bm.hitIds.indexOf(t.id) < 0) {
+              applyDamage(t, bm.damage, 0.12)
+              bm.hitIds.push(t.id)
+              shell.play(hitSound)
+            }
+          }
+          active.push(bm)
+        }
+        boomerangs = active
+      }
+
       function turretStatusText() {
         if (turretLevel === 0) return "TURRET --"
         if (turretEvolved) return "TURRET OVERWATCH PROTOCOL  " + levelTag(turretLevel, turretMaxLevel) + "  x" + turretCap
@@ -943,6 +1042,10 @@ ShellRoot {
         if (turretLevel > 0) {
           turretCooldown = Math.max(0, turretCooldown - dt)
           if (turretCooldown <= 0) dropTurret()
+        }
+        if (boomerangLevel > 0) {
+          boomerangCooldown = Math.max(0, boomerangCooldown - dt)
+          if (boomerangCooldown <= 0) fireBoomerang()
         }
       }
 
@@ -1197,6 +1300,7 @@ ShellRoot {
         if (chainLevel === 0) pool.push({ id: "unlock-chain", title: "TRACEROUTE ARC", detail: "Unlock chain lightning that arcs between nearby threats." })
         if (mineLevel === 0) pool.push({ id: "unlock-mine", title: "HONEYPOT MINE", detail: "Unlock a proximity trap that detonates on contact." })
         if (turretLevel === 0) pool.push({ id: "unlock-turret", title: "AUTO-TURRET", detail: "Deploy a stationary turret that lasers nearby threats." })
+        if (boomerangLevel === 0) pool.push({ id: "unlock-boomerang", title: "PING BOOMERANG", detail: "Unlock a packet that flies out, pierces threats, and returns to you." })
         if (ringLevel > 0) pool.push({ id: "ring-up", title: "RING OVERCLOCK", detail: "Firewall Ring: +radius, +damage, faster pulse." })
         if (orbitLevel > 0) pool.push({ id: "orbit-up", title: "ORBIT SHARD", detail: orbitLevel < orbitShardCap ? "Patch Orbit: +1 shard." : "Patch Orbit: +damage per shard (shard count capped)." })
         if (orbitLevel > 0) pool.push({ id: "orbit-range-up", title: "ORBIT EXPANSE", detail: "Patch Orbit: shards orbit further out." })
@@ -1205,6 +1309,7 @@ ShellRoot {
         if (mineLevel > 0 && mineCapBonus < mineCapBonusMax) pool.push({ id: "mine-cap-up", title: "EXPANDED PAYLOAD", detail: "Honeypot Mine: +1 max deployed at once." })
         if (mineLevel > 0 && !mineCascade && !mineEvolved) pool.push({ id: "mine-cascade", title: "CASCADE TRIGGER", detail: "Honeypot Mine: blasts also detonate nearby mines." })
         if (turretLevel > 0) pool.push({ id: "turret-up", title: "TURRET OVERCLOCK", detail: "Auto-Turret: +damage, +range, faster fire and redeploy." })
+        if (boomerangLevel > 0) pool.push({ id: "boomerang-up", title: "PING OVERCLOCK", detail: "Ping Boomerang: +damage, +range, faster throw." })
         pool.push({ id: "burst-up", title: "PACKET OVERCLOCK", detail: "Packet Burst: faster fire, +pierce, +damage." })
         if (burstMultiLevel < burstMultiCap) pool.push({ id: "burst-multi-up", title: "PACKET FORK", detail: "Packet Burst: +1 simultaneous target." })
         if (burstSpreadLevel < burstSpreadCap) pool.push({ id: "burst-spread-up", title: "SPREAD ROUTING", detail: "Packet Burst: +2 angled bolts per shot." })
@@ -1233,6 +1338,8 @@ ShellRoot {
           pool.push({ id: "evolve-mine", title: "MINEFIELD PROTOCOL", detail: "EVOLUTION: Honeypot Mine redeploys instantly and always cascades." })
         if (!turretEvolved && turretLevel >= turretMaxLevel && armorLevel >= catalystMaxLevel)
           pool.push({ id: "evolve-turret", title: "OVERWATCH PROTOCOL", detail: "EVOLUTION: Auto-Turret fires twice as fast, volleys every threat in range, and shrugs off contact damage." })
+        if (!boomerangEvolved && boomerangLevel >= boomerangMaxLevel && comboLevel >= catalystMaxLevel)
+          pool.push({ id: "evolve-boomerang", title: "ECHO STORM", detail: "EVOLUTION: Ping Boomerang throws a second blade and detonates on the catch." })
         return pool
       }
 
@@ -1277,6 +1384,7 @@ ShellRoot {
         else if (id === "unlock-chain") { chainLevel = 1; chainCooldown = 0.8 }
         else if (id === "unlock-mine") { mineLevel = 1; mineCooldown = 1.2 }
         else if (id === "unlock-turret") { turretLevel = 1; turretCooldown = 1.5 }
+        else if (id === "unlock-boomerang") { boomerangLevel = 1; boomerangCooldown = 1.0 }
         else if (id === "ring-up") ringLevel += 1
         else if (id === "orbit-up") orbitLevel += 1
         else if (id === "orbit-range-up") orbitRangeLevel += 1
@@ -1285,6 +1393,7 @@ ShellRoot {
         else if (id === "mine-cap-up") mineCapBonus += 1
         else if (id === "mine-cascade") mineCascade = true
         else if (id === "turret-up") turretLevel += 1
+        else if (id === "boomerang-up") boomerangLevel += 1
         else if (id === "burst-up") burstLevel += 1
         else if (id === "burst-multi-up") burstMultiLevel += 1
         else if (id === "burst-spread-up") burstSpreadLevel += 1
@@ -1306,6 +1415,7 @@ ShellRoot {
         else if (id === "evolve-chain") { chainEvolved = true; announceEvolution("ARC CASCADE") }
         else if (id === "evolve-mine") { mineEvolved = true; announceEvolution("MINEFIELD PROTOCOL") }
         else if (id === "evolve-turret") { turretEvolved = true; announceEvolution("OVERWATCH PROTOCOL") }
+        else if (id === "evolve-boomerang") { boomerangEvolved = true; announceEvolution("ECHO STORM") }
         upgradeChoices = []
         mode = "playing"
       }
@@ -1346,6 +1456,7 @@ ShellRoot {
         bolts = []
         rings = []
         chains = []
+        boomerangs = []
         mode = "wavecomplete"
         waveTransitionLife = 2.0
         spawnBurst(playerX, playerY, "accent", 30, 200, 0.6)
@@ -1467,6 +1578,7 @@ ShellRoot {
         updateMines(dt)
         updateTurrets(dt)
         updateBeams(dt)
+        updateBoomerangs(dt)
         updateEnemies(dt)
         if (mode !== "playing") return
         if (waveKills >= waveKillTarget) { completeWave(); return }
@@ -1954,6 +2066,26 @@ ShellRoot {
                 context.beginPath(); context.arc(b.x, b.y, 1.4, 0, Math.PI * 2); context.fill()
               }
 
+              for (var pmi = 0; pmi < game.boomerangs.length; pmi++) {
+                var pm = game.boomerangs[pmi]
+                var pmCol = pm.evolved ? theme.yellow : theme.accent
+                context.save()
+                context.translate(pm.x, pm.y)
+                context.rotate(game.animationTime * 12)
+                context.globalAlpha = pm.phase === "back" ? 0.65 : 1
+                context.strokeStyle = pmCol
+                context.lineWidth = 2.4
+                context.beginPath()
+                context.moveTo(-7, 0); context.lineTo(7, 0)
+                context.moveTo(0, -7); context.lineTo(0, 7)
+                context.stroke()
+                context.strokeStyle = theme.foreground
+                context.lineWidth = 1
+                context.beginPath(); context.arc(0, 0, 3, 0, Math.PI * 2); context.stroke()
+                context.restore()
+              }
+              context.globalAlpha = 1
+
               for (var mi = 0; mi < game.mines.length; mi++) {
                 var mine = game.mines[mi]
                 var mineCol = mine.evolved ? theme.yellow : theme.orange
@@ -2218,6 +2350,7 @@ ShellRoot {
               Text { text: game.chainStatusText(); color: game.chainEvolved ? theme.accent : (game.chainLevel > 0 ? theme.yellow : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Text { text: game.mineStatusText(); color: game.mineEvolved ? theme.yellow : (game.mineLevel > 0 ? theme.orange : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Text { text: game.turretStatusText(); color: game.turretEvolved ? theme.yellow : (game.turretLevel > 0 ? theme.accent : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
+              Text { text: game.boomerangStatusText(); color: game.boomerangEvolved ? theme.yellow : (game.boomerangLevel > 0 ? theme.accent : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Rectangle { visible: game.speedBonus > 0 || game.pickupBonus > 0 || game.maxHp > 5 || game.xpBonus > 0 || game.shieldBonus > 0 || game.regenLevel > 0 || game.failoverCharges > 0 || game.critLevel > 0 || game.slowAuraLevel > 0 || game.siphonLevel > 0 || game.armorLevel > 0 || game.comboLevel > 0; width: parent.width; height: 1; color: theme.muted }
               Text { visible: game.speedBonus > 0; text: "SPD    +" + (game.speedBonus * 15) + "%  " + game.levelTag(game.speedBonus, game.catalystMaxLevel); color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.pickupBonus > 0; text: "SCAN   +" + game.pickupBonus; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }

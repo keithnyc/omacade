@@ -604,7 +604,7 @@ class OmacadeTests(unittest.TestCase):
         # Weapon evolutions: each weapon pairs with a maxed catalyst passive to unlock a
         # one-time evolved form, tracked via a bool flag and surfaced in the HUD/level-up UI.
         self.assertIn("function announceEvolution(name)", swarm)
-        for flag in ("burstEvolved", "ringEvolved", "orbitEvolved", "chainEvolved", "mineEvolved", "turretEvolved"):
+        for flag in ("burstEvolved", "ringEvolved", "orbitEvolved", "chainEvolved", "mineEvolved", "turretEvolved", "boomerangEvolved"):
             self.assertIn(f"property bool {flag}: false", swarm)
         for evolve_id, catalyst_check in (
             ('id === "evolve-burst"', "burstLevel >= burstMaxLevel && speedBonus >= catalystMaxLevel"),
@@ -613,12 +613,13 @@ class OmacadeTests(unittest.TestCase):
             ('id === "evolve-chain"', "chainLevel >= chainMaxLevel && critLevel >= catalystMaxLevel"),
             ('id === "evolve-mine"', "mineLevel >= mineMaxLevel && regenLevel >= catalystMaxLevel"),
             ('id === "evolve-turret"', "turretLevel >= turretMaxLevel && armorLevel >= catalystMaxLevel"),
+            ('id === "evolve-boomerang"', "boomerangLevel >= boomerangMaxLevel && comboLevel >= catalystMaxLevel"),
         ):
             self.assertIn(evolve_id, swarm)
             self.assertIn(catalyst_check, swarm)
         # HUD status text functions surface Lv/max progress and a READY tag pre-evolution,
         # then the evolved weapon name post-evolution -- the tracking indicators requested.
-        for status_fn in ("burstStatusText", "ringStatusText", "orbitStatusText", "chainStatusText", "mineStatusText", "turretStatusText"):
+        for status_fn in ("burstStatusText", "ringStatusText", "orbitStatusText", "chainStatusText", "mineStatusText", "turretStatusText", "boomerangStatusText"):
             self.assertIn(f"function {status_fn}()", swarm)
         self.assertIn('ready ? "  READY" : ""', swarm)
         # Evolution cards are visually flagged on the level-up screen.
@@ -658,6 +659,21 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("t.hp -= en.damage * (turretEvolved ? 1.2 : 2.4) * dt", swarm)
         self.assertIn("if (turretEvolved) {", swarm)
         self.assertIn("evolved: true })", swarm)
+
+        # Ping Boomerang: seventh weapon, requested directly ("how about a boomerang weapon?").
+        # A thrown packet that pierces enemies on the way out, then homes back to the player's
+        # current position and can hit again on the return leg. Catalyst is Kill Streak (combo),
+        # matching an aggressive multi-hit theme. Evolution (ECHO STORM) throws a second blade
+        # and detonates a small AoE pulse on catch.
+        self.assertIn("function fireBoomerang()", swarm)
+        self.assertIn("function updateBoomerangs(dt)", swarm)
+        self.assertIn('id === "unlock-boomerang"', swarm)
+        self.assertIn('id === "boomerang-up"', swarm)
+        self.assertIn("readonly property int boomerangMaxLevel: 8", swarm)
+        self.assertIn('if (bm.phase === "out") {', swarm)
+        self.assertIn('bm.phase = "back"; bm.hitIds = []', swarm)
+        self.assertIn('id === "evolve-boomerang") { boomerangEvolved = true; announceEvolution("ECHO STORM") }', swarm)
+        self.assertIn("var dmg = 2 + boomerangLevel * 2 + (boomerangEvolved ? 3 : 0)", swarm)
 
         # Weapon/catalyst level caps raised and decoupled from evolution-readiness thresholds:
         # "-up" tracks stay in the pool forever so a build keeps growing well past wave 50.
