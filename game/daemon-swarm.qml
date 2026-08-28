@@ -116,6 +116,7 @@ ShellRoot {
 
       property string mode: "attract"
       property string modeBeforeScores: "attract"
+      property bool showInstructions: false
       property real playerX: worldWidth / 2
       property real playerY: worldHeight / 2
       readonly property real dashDuration: 0.16
@@ -437,6 +438,7 @@ ShellRoot {
 
       function startRun() {
         resetRun()
+        showInstructions = false
         mode = "playing"
         lastTickMs = Date.now()
         shell.play(launchSound)
@@ -1659,7 +1661,13 @@ ShellRoot {
           return
         }
         if (mode === "attract" || mode === "gameover") {
+          if (showInstructions) {
+            if (event.key === Qt.Key_I || event.key === Qt.Key_Escape || event.key === Qt.Key_Return || event.key === Qt.Key_Enter) showInstructions = false
+            event.accepted = true
+            return
+          }
           if (event.key === Qt.Key_H) openScores()
+          else if (event.key === Qt.Key_I && mode === "attract") showInstructions = true
           else if (shell.circuitMode && mode === "gameover" && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)) window.visible = false
           else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) startRun()
           else if (event.key === Qt.Key_Q || event.key === Qt.Key_Escape) window.visible = false
@@ -2407,10 +2415,10 @@ ShellRoot {
           }
 
           Rectangle {
-            visible: game.mode === "attract"
+            visible: game.mode === "attract" && !game.showInstructions
             anchors.centerIn: parent
             width: Math.min(parent.width - 60, 650)
-            height: Math.min(parent.height - 44, 440)
+            height: Math.min(parent.height - 44, 340)
             radius: 12
             color: theme.surface
             border.color: theme.accent
@@ -2423,13 +2431,13 @@ ShellRoot {
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: shell.cabinet.displayTitle; color: theme.foreground; font.pixelSize: 34; font.bold: true; font.letterSpacing: 3 }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: shell.cabinet.tagline.toUpperCase(); color: theme.green; font.pixelSize: 13; font.family: "monospace" }
               Rectangle { width: parent.width; height: 1; color: theme.muted }
-              Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; text: "A ROGUE PROCESS SWARM IS SPREADING. CLEAR EACH WAVE'S KILL QUOTA TO ADVANCE.\nCOLLECT PACKETS TO LEVEL UP AND CHOOSE NEW DEFENSES."; color: theme.foreground; font.pixelSize: 14; font.family: "monospace"; lineHeight: 1.3 }
-              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "AUTO-FIRE TARGETS THE NEAREST THREAT  ·  CLEARING A WAVE BANKS A FREE REWARD"; color: theme.green; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
-              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "FORKS SPLIT ON DEATH  ·  ROOTKIT ELITES FROM WAVE 6  ·  MINI-BOSSES FROM WAVE 10"; color: theme.orange; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
-              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "ELITES CAN BE SHIELDED, FAST, OR VOLATILE  ·  RARE MAGNET PACKETS SWEEP THE FIELD"; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
-              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "MINI-BOSSES GROW MORE UNPREDICTABLE AT HIGH WAVES  ·  DEPLOY AN AUTO-TURRET FOR COVERING FIRE"; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
-              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "EXPLORE FOR ROOTKIT LAIRS, SIGNAL RELAYS, AND BACKUP SERVERS  ·  FOLLOW THE EDGE ARROWS"; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "← ↑ ↓ → / WASD MOVE   ·   SPACE TO DASH"; color: theme.muted; font.pixelSize: 11; font.family: "monospace" }
+              Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "MORE... (I)"
+                color: theme.accent
+                font.pixelSize: 11; font.family: "monospace"; font.bold: true; font.underline: true
+              }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "BEST " + arcadeData.bestScore + "   ·   FURTHEST WAVE " + arcadeData.highestStage; color: theme.yellow; font.pixelSize: 13; font.family: "monospace"; font.bold: true }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "PRESS ENTER TO BOOT"; color: theme.accent; font.pixelSize: 18; font.family: "monospace"; font.bold: true
                 SequentialAnimation on opacity {
@@ -2439,6 +2447,33 @@ ShellRoot {
                 }
               }
               Text { anchors.horizontalCenter: parent.horizontalCenter; text: "H RECORDS    Q QUIT"; color: theme.muted; font.pixelSize: 10; font.family: "monospace" }
+            }
+          }
+
+          Rectangle {
+            // Full field manual, tucked behind "MORE... (I)" on the attract screen so the
+            // default view isn't a wall of text -- opened/closed with the same I key.
+            visible: game.mode === "attract" && game.showInstructions
+            anchors.centerIn: parent
+            width: Math.min(parent.width - 60, 650)
+            height: Math.min(parent.height - 44, 440)
+            radius: 12
+            color: theme.surface
+            border.color: theme.accent
+            border.width: 2
+            Column {
+              anchors.centerIn: parent
+              width: parent.width - 58
+              spacing: 12
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "FIELD MANUAL"; color: theme.accent; font.pixelSize: 16; font.family: "monospace"; font.bold: true; font.letterSpacing: 2 }
+              Rectangle { width: parent.width; height: 1; color: theme.muted }
+              Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; text: "A ROGUE PROCESS SWARM IS SPREADING. CLEAR EACH WAVE'S KILL QUOTA TO ADVANCE.\nCOLLECT PACKETS TO LEVEL UP AND CHOOSE NEW DEFENSES."; color: theme.foreground; font.pixelSize: 14; font.family: "monospace"; lineHeight: 1.3 }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "AUTO-FIRE TARGETS THE NEAREST THREAT  ·  CLEARING A WAVE BANKS A FREE REWARD"; color: theme.green; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "FORKS SPLIT ON DEATH  ·  ROOTKIT ELITES FROM WAVE 6  ·  MINI-BOSSES FROM WAVE 10"; color: theme.orange; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "ELITES CAN BE SHIELDED, FAST, OR VOLATILE  ·  RARE MAGNET PACKETS SWEEP THE FIELD"; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "MINI-BOSSES GROW MORE UNPREDICTABLE AT HIGH WAVES  ·  DEPLOY AN AUTO-TURRET FOR COVERING FIRE"; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "EXPLORE FOR ROOTKIT LAIRS, SIGNAL RELAYS, AND BACKUP SERVERS  ·  FOLLOW THE EDGE ARROWS"; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "PRESS I OR ESCAPE TO CLOSE"; color: theme.muted; font.pixelSize: 11; font.family: "monospace" }
             }
           }
 

@@ -698,6 +698,19 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("dashCooldown = Math.max(0, dashCooldown - dt)", swarm)
         self.assertIn("SPACE DASH", swarm)
 
+        # Attract-screen instructions collapsed behind a "MORE..." link/dialog -- the intro
+        # panel was "pretty damn texty"; now it's just controls + a link, with the full field
+        # manual tucked behind the I key so it isn't a wall of text by default.
+        self.assertIn("property bool showInstructions: false", swarm)
+        self.assertIn('visible: game.mode === "attract" && !game.showInstructions', swarm)
+        self.assertIn('visible: game.mode === "attract" && game.showInstructions', swarm)
+        self.assertIn('text: "MORE... (I)"', swarm)
+        self.assertIn('text: "FIELD MANUAL"', swarm)
+        self.assertIn('text: "PRESS I OR ESCAPE TO CLOSE"', swarm)
+        self.assertIn('else if (event.key === Qt.Key_I && mode === "attract") showInstructions = true', swarm)
+        self.assertIn("if (event.key === Qt.Key_I || event.key === Qt.Key_Escape || event.key === Qt.Key_Return || event.key === Qt.Key_Enter) showInstructions = false", swarm)
+        self.assertIn("showInstructions = false", swarm)
+
         # Weapon/catalyst level caps raised and decoupled from evolution-readiness thresholds:
         # "-up" tracks stay in the pool forever so a build keeps growing well past wave 50.
         for const_name, value in (
