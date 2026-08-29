@@ -68,7 +68,7 @@ ShellRoot {
       readonly property int orbitDamage: 1 + orbitLevel + (orbitEvolved ? 2 : 0)
       readonly property int orbitShardCap: 10
       readonly property int orbitShardCount: Math.min(orbitLevel, orbitShardCap)
-      readonly property int maxEnemies: Math.min(320, 90 + wave * 9)
+      readonly property int maxEnemies: Math.min(240, 90 + wave * 7)
       // Width of the rotating gap in the regular spawn ring -- see edgeSpawnPoint().
       readonly property real openLaneWidth: Math.PI * 0.55
       // These are evolution-readiness thresholds, not hard caps -- every "-up" upgrade
@@ -134,13 +134,16 @@ ShellRoot {
       readonly property real moveSpeed: 190 * (1 + speedBonus * 0.15)
       // Hardening now kicks in earlier (wave 15) and compounds faster so builds face rising
       // resistance well before the extreme late game, instead of coasting until wave 25+.
-      readonly property real waveHardening: Math.pow(1.045, Math.max(0, wave - 15))
+      readonly property real waveHardening: Math.pow(1.05, Math.max(0, wave - 15))
       // Kept deliberately mild and capped low (max 1.6x) -- enemies should never outrun the
       // player's base move speed (190). Difficulty instead comes from HP, elite pressure, and
       // sheer volume below, so standing still isn't the only viable strategy late-game.
       readonly property real enemySpeedMul: 1 + Math.min(0.6, wave * 0.025)
-      readonly property real enemyHpMul: (1 + wave * 0.14) * waveHardening
-      readonly property real enemyDamageMul: (1 + wave * 0.03) * Math.pow(1.015, Math.max(0, wave - 15))
+      // HP/damage carry more of the late-game load than before -- maxEnemies below got pulled
+      // back down after wave 35+ started tanking framerate with 320 concurrent enemies each
+      // getting O(n) hit-scanned by every active weapon. Fewer, tougher enemies instead.
+      readonly property real enemyHpMul: (1 + wave * 0.16) * waveHardening
+      readonly property real enemyDamageMul: (1 + wave * 0.035) * Math.pow(1.02, Math.max(0, wave - 15))
 
       property string mode: "attract"
       property string modeBeforeScores: "attract"
@@ -1840,7 +1843,7 @@ ShellRoot {
       }
 
       function spawnBatchSize() {
-        return Math.min(7, 1 + Math.floor(wave / 6))
+        return Math.min(5, 1 + Math.floor(wave / 7))
       }
 
       function updateOpenLane(dt) {
@@ -1857,7 +1860,7 @@ ShellRoot {
           var batch = spawnBatchSize()
           for (var i = 0; i < batch && enemies.length < maxEnemies; i++)
             spawnEnemyAt(pickEnemyType(), edgeSpawnPoint())
-          spawnCooldown = Math.max(0.08, 0.85 - wave * 0.035) * (0.75 + Math.random() * 0.5)
+          spawnCooldown = Math.max(0.1, 0.85 - wave * 0.03) * (0.75 + Math.random() * 0.5)
         }
       }
 

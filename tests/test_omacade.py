@@ -553,17 +553,17 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("function rollUpgrades()", swarm)
         self.assertIn('type === "rootkit"', swarm)
         self.assertIn('if (e.type === "fork")', swarm)
-        self.assertIn("readonly property int maxEnemies: Math.min(320, 90 + wave * 9)", swarm)
+        self.assertIn("readonly property int maxEnemies: Math.min(240, 90 + wave * 7)", swarm)
         self.assertIn('difficulty: "swarm"', swarm)
         self.assertIn("stage: wave,", swarm)
         self.assertIn("time: Math.round(elapsed), kills: kills, elites: elites, level: level", swarm)
         self.assertIn("function completeWave()", swarm)
         self.assertIn("function rollWaveReward()", swarm)
         self.assertIn("readonly property int waveKillTarget: 8 + wave * 5", swarm)
-        self.assertIn("readonly property real waveHardening: Math.pow(1.045, Math.max(0, wave - 15))", swarm)
+        self.assertIn("readonly property real waveHardening: Math.pow(1.05, Math.max(0, wave - 15))", swarm)
         self.assertIn("readonly property real enemySpeedMul: 1 + Math.min(0.6, wave * 0.025)", swarm)
-        self.assertIn("readonly property real enemyHpMul: (1 + wave * 0.14) * waveHardening", swarm)
-        self.assertIn("readonly property real enemyDamageMul: (1 + wave * 0.03) * Math.pow(1.015, Math.max(0, wave - 15))", swarm)
+        self.assertIn("readonly property real enemyHpMul: (1 + wave * 0.16) * waveHardening", swarm)
+        self.assertIn("readonly property real enemyDamageMul: (1 + wave * 0.035) * Math.pow(1.02, Math.max(0, wave - 15))", swarm)
         self.assertIn('mode === "wavecomplete"', swarm)
         self.assertNotIn("Math.min(4, ringLevel", swarm)
         self.assertNotIn("Math.min(5, burstLevel", swarm)
@@ -574,9 +574,12 @@ class OmacadeTests(unittest.TestCase):
         # Wave-complete transient-state clear (mines/bolts/rings/chains), per user feedback.
         self.assertIn("mines = []\n        bolts = []\n        rings = []\n        chains = []", swarm)
         # Enemy density should actually escalate with wave: batched spawns + faster cooldown floor.
+        # Volume was pulled back down after wave 35+ tanked framerate with 320 concurrent
+        # enemies each getting O(n) hit-scanned by every active weapon -- HP/damage carry more
+        # of the late-game difficulty now instead (see enemyHpMul/enemyDamageMul above).
         self.assertIn("function spawnBatchSize()", swarm)
-        self.assertIn("Math.min(7, 1 + Math.floor(wave / 6))", swarm)
-        self.assertIn("spawnCooldown = Math.max(0.08, 0.85 - wave * 0.035)", swarm)
+        self.assertIn("Math.min(5, 1 + Math.floor(wave / 7))", swarm)
+        self.assertIn("spawnCooldown = Math.max(0.1, 0.85 - wave * 0.03)", swarm)
         # Mini-boss reuses the elite warning/spawn cycle.
         self.assertIn('type === "boss"', swarm)
         self.assertIn("enemyProfile(type)", swarm)
