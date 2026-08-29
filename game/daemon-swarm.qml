@@ -81,6 +81,8 @@ ShellRoot {
       readonly property int turretMaxLevel: 8
       readonly property int boomerangMaxLevel: 8
       readonly property int missileMaxLevel: 8
+      readonly property int droneMaxLevel: 8
+      readonly property int corruptMaxLevel: 8
       readonly property int catalystMaxLevel: 10
       // Unlike the thresholds above, these ARE hard caps -- they bound how many simultaneous
       // bolts/mines/turrets can exist at once, which is what actually drives per-frame cost.
@@ -95,6 +97,21 @@ ShellRoot {
       readonly property real missileSpeed: 230
       readonly property real missileTurnRate: 3.2
       readonly property int missileCount: Math.min(5, 1 + Math.floor(missileLevel / 2))
+      // Mobile, ranged, autonomous -- unlike Auto-Turret (stationary, has HP, expires) or
+      // Patch Orbit (melee contact only), Sentinel Drone just follows the player and snipes.
+      readonly property int droneCount: Math.min(droneEvolved ? 4 : 3, 1 + Math.floor(droneLevel / 3))
+      readonly property real droneOrbitRadius: 110
+      readonly property real droneOrbitSpeed: 1.3
+      readonly property real droneRange: 260 + droneLevel * 14
+      readonly property real droneFireInterval: Math.max(0.45, 1.5 - droneLevel * 0.12) * (droneEvolved ? 0.6 : 1)
+      readonly property int droneDamage: (2 + Math.floor(droneLevel * 1.4)) + (droneEvolved ? 3 : 0)
+      // Sustained/spreading DoT -- everything else in the loadout is an instant hit, this is
+      // the only weapon that ticks over time and can jump between enemies on its own.
+      readonly property real corruptTickInterval: 0.5
+      readonly property real corruptDuration: 3.0 + corruptLevel * 0.4
+      readonly property real corruptSpreadRadius: 70 + corruptLevel * 9
+      readonly property real corruptSpreadChance: corruptEvolved ? 1 : Math.min(0.6, 0.15 + corruptLevel * 0.05)
+      readonly property int corruptDamage: (1 + Math.floor(corruptLevel * 0.7)) + (corruptEvolved ? 2 : 0)
       readonly property real slowAuraRadius: 70 + slowAuraLevel * 22
       readonly property real siphonChance: siphonLevel * 0.06
       // Capped well short of 100% -- this blunts damage, it shouldn't make hits free. The
@@ -168,6 +185,10 @@ ShellRoot {
       property real boomerangCooldown: 0
       property int missileLevel: 0
       property real missileCooldown: 0
+      property int droneLevel: 0
+      property var drones: []
+      property int corruptLevel: 0
+      property real corruptCooldown: 0
       property int speedBonus: 0
       property int pickupBonus: 0
       property int xpBonus: 0
@@ -191,6 +212,8 @@ ShellRoot {
       property bool turretEvolved: false
       property bool boomerangEvolved: false
       property bool missileEvolved: false
+      property bool droneEvolved: false
+      property bool corruptEvolved: false
       property real burstCooldown: 0
       property real ringCooldown: 0
       property real chainCooldown: 0
@@ -318,6 +341,20 @@ ShellRoot {
         return "MSL    " + levelTag(missileLevel, missileMaxLevel) + "  x" + count + (ready ? "  READY" : "")
       }
 
+      function droneStatusText() {
+        if (droneLevel === 0) return "DRONE  --"
+        if (droneEvolved) return "DRONE  SENTINEL ARRAY  " + levelTag(droneLevel, droneMaxLevel) + "  x" + droneCount
+        var ready = droneLevel >= droneMaxLevel && pickupBonus >= catalystMaxLevel
+        return "DRONE  " + levelTag(droneLevel, droneMaxLevel) + "  x" + droneCount + (ready ? "  READY" : "")
+      }
+
+      function corruptStatusText() {
+        if (corruptLevel === 0) return "VIRUS  --"
+        if (corruptEvolved) return "VIRUS  BLACKOUT STRAIN  " + levelTag(corruptLevel, corruptMaxLevel)
+        var ready = corruptLevel >= corruptMaxLevel && xpBonus >= catalystMaxLevel
+        return "VIRUS  " + levelTag(corruptLevel, corruptMaxLevel) + (ready ? "  READY" : "")
+      }
+
       function mineStatusText() {
         if (mineLevel === 0) return "MINE   --"
         var tag = mineCascade ? " CHAIN" : ""
@@ -412,6 +449,10 @@ ShellRoot {
         boomerangCooldown = 0
         missileLevel = 0
         missileCooldown = 0
+        droneLevel = 0
+        drones = []
+        corruptLevel = 0
+        corruptCooldown = 0
         speedBonus = 0
         pickupBonus = 0
         xpBonus = 0
@@ -435,6 +476,8 @@ ShellRoot {
         turretEvolved = false
         boomerangEvolved = false
         missileEvolved = false
+        droneEvolved = false
+        corruptEvolved = false
         burstCooldown = 0
         ringCooldown = 0
         chainCooldown = 0
@@ -653,7 +696,7 @@ ShellRoot {
                  speed: profile.speed * enemySpeedMul, radius: profile.radius,
                  damage: Math.max(profile.damage, Math.round(profile.damage * enemyDamageMul)),
                  xp: profile.xp, score: profile.score, colorKey: profile.color, hitFlash: 0,
-                 orbitCooldown: 0, modifier: null, lairId: null }
+                 orbitCooldown: 0, modifier: null, lairId: null, corruptTimer: 0, corruptTick: 0 }
       }
 
       function spawnEnemyAt(type, pos) {
@@ -1171,6 +1214,79 @@ ShellRoot {
         missiles = active
       }
 
+      function updateDrones(dt) {
+        if (droneLevel === 0) { if (drones.length > 0) drones = []; return }
+        var count = droneCount
+        var active = drones.slice(0)
+        while (active.length < count) active.push({ x: playerX, y: playerY, cooldown: 0.3 + active.length * 0.25 })
+        if (active.length > count) active = active.slice(0, count)
+        var updatedBeams = beams.slice(0)
+        var fired = false
+        for (var i = 0; i < active.length; i++) {
+          var d = active[i]
+          var angle = animationTime * droneOrbitSpeed + i * (Math.PI * 2 / count)
+          d.x = playerX + Math.cos(angle) * droneOrbitRadius
+          d.y = playerY + Math.sin(angle) * droneOrbitRadius
+          d.cooldown -= dt
+          if (d.cooldown <= 0) {
+            var target = nearestEnemyTo(d.x, d.y)
+            if (target) {
+              var tdx = target.x - d.x, tdy = target.y - d.y
+              if (tdx * tdx + tdy * tdy <= droneRange * droneRange) {
+                applyDamage(target, droneDamage, 0.12)
+                updatedBeams.push({ x1: d.x, y1: d.y, x2: target.x, y2: target.y, life: 0, duration: 0.1, kind: "drone", evolved: droneEvolved })
+                fired = true
+              }
+            }
+            d.cooldown = droneFireInterval
+          }
+        }
+        drones = active
+        if (fired) { beams = updatedBeams; shell.play(hitSound) }
+      }
+
+      function infectEnemy(e) {
+        e.corruptTimer = corruptDuration
+        e.corruptTick = corruptTickInterval
+      }
+
+      function fireCorrupt() {
+        var target = nearestEnemy()
+        if (!target) return
+        infectEnemy(target)
+        spawnPop(target.x, target.y, "green", 40, 0.3)
+        corruptCooldown = Math.max(0.6, 1.8 - corruptLevel * 0.12)
+      }
+
+      // The only sustained/spreading weapon in the loadout -- everything else is an instant
+      // hit. Ticks damage on already-infected enemies and, each tick, has a chance (guaranteed
+      // once evolved) to jump the infection to the nearest clean enemy nearby.
+      function updateCorrupt(dt) {
+        if (corruptLevel === 0) return
+        for (var i = 0; i < enemies.length; i++) {
+          var e = enemies[i]
+          if (!e.corruptTimer || e.corruptTimer <= 0) continue
+          e.corruptTimer -= dt
+          e.corruptTick -= dt
+          if (e.corruptTick <= 0) {
+            applyDamage(e, corruptDamage, 0.1)
+            e.corruptTick = corruptTickInterval
+            if (Math.random() < corruptSpreadChance) {
+              var nearest = null
+              var bestD = corruptSpreadRadius * corruptSpreadRadius
+              for (var j = 0; j < enemies.length; j++) {
+                var cand = enemies[j]
+                if (cand.id === e.id || (cand.corruptTimer && cand.corruptTimer > 0)) continue
+                var dx = cand.x - e.x, dy = cand.y - e.y
+                var d = dx * dx + dy * dy
+                if (d < bestD) { bestD = d; nearest = cand }
+              }
+              if (nearest) { infectEnemy(nearest); spawnPop(nearest.x, nearest.y, "green", 24, 0.25) }
+            }
+          }
+        }
+      }
+
       function turretStatusText() {
         if (turretLevel === 0) return "TURRET --"
         if (turretEvolved) return "TURRET OVERWATCH PROTOCOL  " + levelTag(turretLevel, turretMaxLevel) + "  x" + turretCap
@@ -1214,6 +1330,10 @@ ShellRoot {
         if (missileLevel > 0) {
           missileCooldown = Math.max(0, missileCooldown - dt)
           if (missileCooldown <= 0) fireMissiles()
+        }
+        if (corruptLevel > 0) {
+          corruptCooldown = Math.max(0, corruptCooldown - dt)
+          if (corruptCooldown <= 0) fireCorrupt()
         }
       }
 
@@ -1485,6 +1605,8 @@ ShellRoot {
         if (turretLevel === 0) pool.push({ id: "unlock-turret", title: "AUTO-TURRET", detail: "Deploy a stationary turret that lasers nearby threats." })
         if (boomerangLevel === 0) pool.push({ id: "unlock-boomerang", title: "PING BOOMERANG", detail: "Unlock a packet that flies out, pierces threats, and returns to you." })
         if (missileLevel === 0) pool.push({ id: "unlock-missile", title: "PAYLOAD MISSILE", detail: "Unlock a slow heat-seeking missile with an explosive AoE payload." })
+        if (droneLevel === 0) pool.push({ id: "unlock-drone", title: "SENTINEL DRONE", detail: "Deploy an orbiting drone that autonomously snipes the nearest threat." })
+        if (corruptLevel === 0) pool.push({ id: "unlock-corrupt", title: "CORRUPT FIELD", detail: "Infect the nearest threat with a damage-over-time corruption that can spread to nearby enemies." })
         if (ringLevel > 0) pool.push({ id: "ring-up", title: "RING OVERCLOCK", detail: "Firewall Ring: +radius, +damage, faster pulse." })
         if (orbitLevel > 0) pool.push({ id: "orbit-up", title: "ORBIT SHARD", detail: orbitLevel < orbitShardCap ? "Patch Orbit: +1 shard." : "Patch Orbit: +damage per shard (shard count capped)." })
         if (orbitLevel > 0) pool.push({ id: "orbit-range-up", title: "ORBIT EXPANSE", detail: "Patch Orbit: shards orbit further out." })
@@ -1495,6 +1617,8 @@ ShellRoot {
         if (turretLevel > 0) pool.push({ id: "turret-up", title: "TURRET OVERCLOCK", detail: "Auto-Turret: +damage, +range, faster fire and redeploy." })
         if (boomerangLevel > 0) pool.push({ id: "boomerang-up", title: "PING OVERCLOCK", detail: "Ping Boomerang: +damage, +range, faster throw." })
         if (missileLevel > 0) pool.push({ id: "missile-up", title: "PAYLOAD OVERCLOCK", detail: "Payload Missile: +missile count, +blast radius, +damage." })
+        if (droneLevel > 0) pool.push({ id: "drone-up", title: "SENTINEL OVERCLOCK", detail: "Sentinel Drone: +1 drone (up to 3), +damage, faster fire." })
+        if (corruptLevel > 0) pool.push({ id: "corrupt-up", title: "STRAIN OVERCLOCK", detail: "Corrupt Field: +damage, longer infection, more likely to spread." })
         pool.push({ id: "burst-up", title: "PACKET OVERCLOCK", detail: "Packet Burst: faster fire, +pierce, +damage." })
         if (burstMultiLevel < burstMultiCap) pool.push({ id: "burst-multi-up", title: "PACKET FORK", detail: "Packet Burst: +1 simultaneous target." })
         if (burstSpreadLevel < burstSpreadCap) pool.push({ id: "burst-spread-up", title: "SPREAD ROUTING", detail: "Packet Burst: +2 angled bolts per shot." })
@@ -1527,14 +1651,67 @@ ShellRoot {
           pool.push({ id: "evolve-boomerang", title: "ECHO STORM", detail: "EVOLUTION: Ping Boomerang throws a second blade and detonates on the catch." })
         if (!missileEvolved && missileLevel >= missileMaxLevel && siphonLevel >= catalystMaxLevel)
           pool.push({ id: "evolve-missile", title: "SATURATION STRIKE", detail: "EVOLUTION: Payload Missile launches two extra warheads, blasts wider and harder, and reloads faster." })
+        if (!droneEvolved && droneLevel >= droneMaxLevel && pickupBonus >= catalystMaxLevel)
+          pool.push({ id: "evolve-drone", title: "SENTINEL ARRAY", detail: "EVOLUTION: Sentinel Drone deploys a 4th unit and fires faster and harder." })
+        if (!corruptEvolved && corruptLevel >= corruptMaxLevel && xpBonus >= catalystMaxLevel)
+          pool.push({ id: "evolve-corrupt", title: "BLACKOUT STRAIN", detail: "EVOLUTION: Corrupt Field always spreads on tick and hits much harder." })
         return pool
+      }
+
+      // Weapon "-up" and catalyst "-up" entries stay in the pool forever alongside ~20+ other
+      // upgrades (see upgradePool()), so a purely uniform roll made finishing any one
+      // weapon+catalyst combo (16-20 dedicated picks) astronomically unlikely once the pool
+      // grew past 6 weapons -- confirmed live: zero evolutions by wave 80. Upweighting whatever
+      // the player has already committed to keeps builds converging instead of spreading thin.
+      function upgradeWeight(entry) {
+        if (entry.id === "burst-up" && burstLevel > 0) return 3
+        if (entry.id === "ring-up" && ringLevel > 0) return 3
+        if (entry.id === "orbit-up" && orbitLevel > 0) return 3
+        if (entry.id === "chain-up" && chainLevel > 0) return 3
+        if (entry.id === "mine-up" && mineLevel > 0) return 3
+        if (entry.id === "turret-up" && turretLevel > 0) return 3
+        if (entry.id === "boomerang-up" && boomerangLevel > 0) return 3
+        if (entry.id === "missile-up" && missileLevel > 0) return 3
+        if (entry.id === "drone-up" && droneLevel > 0) return 3
+        if (entry.id === "corrupt-up" && corruptLevel > 0) return 3
+        if (entry.id === "speed-up" && speedBonus > 0) return 3
+        if (entry.id === "shield-up" && shieldBonus > 0) return 3
+        if (entry.id === "slow-aura-up" && slowAuraLevel > 0) return 3
+        if (entry.id === "crit-up" && critLevel > 0) return 3
+        if (entry.id === "regen-up" && regenLevel > 0) return 3
+        if (entry.id === "armor-up" && armorLevel > 0) return 3
+        if (entry.id === "combo-up" && comboLevel > 0) return 3
+        if (entry.id === "siphon-up" && siphonLevel > 0) return 3
+        if (entry.id === "pickup-up" && pickupBonus > 0) return 3
+        if (entry.id === "xp-up" && xpBonus > 0) return 3
+        return 1
+      }
+
+      function weightedPick(list) {
+        var total = 0
+        for (var w = 0; w < list.length; w++) total += upgradeWeight(list[w])
+        var roll = Math.random() * total
+        for (var i = 0; i < list.length; i++) {
+          roll -= upgradeWeight(list[i])
+          if (roll <= 0) return i
+        }
+        return list.length - 1
       }
 
       function rollUpgrades() {
         var working = upgradePool()
         var pick = []
+        // Once a weapon and its catalyst are both maxed, guarantee the evolution shows up on
+        // the very next level-up instead of also competing on pure RNG -- eligibility alone
+        // should be enough to see it, not one more lucky roll on top.
+        for (var e = working.length - 1; e >= 0 && pick.length < 3; e--) {
+          if (working[e].id.indexOf("evolve-") === 0) {
+            pick.push(working[e])
+            working.splice(e, 1)
+          }
+        }
         while (pick.length < 3 && working.length > 0) {
-          var index = Math.floor(Math.random() * working.length)
+          var index = weightedPick(working)
           pick.push(working[index])
           working.splice(index, 1)
         }
@@ -1573,6 +1750,8 @@ ShellRoot {
         else if (id === "unlock-turret") { turretLevel = 1; turretCooldown = 1.5 }
         else if (id === "unlock-boomerang") { boomerangLevel = 1; boomerangCooldown = 1.0 }
         else if (id === "unlock-missile") { missileLevel = 1; missileCooldown = 1.4 }
+        else if (id === "unlock-drone") droneLevel = 1
+        else if (id === "unlock-corrupt") { corruptLevel = 1; corruptCooldown = 1.0 }
         else if (id === "ring-up") ringLevel += 1
         else if (id === "orbit-up") orbitLevel += 1
         else if (id === "orbit-range-up") orbitRangeLevel += 1
@@ -1583,6 +1762,8 @@ ShellRoot {
         else if (id === "turret-up") turretLevel += 1
         else if (id === "boomerang-up") boomerangLevel += 1
         else if (id === "missile-up") missileLevel += 1
+        else if (id === "drone-up") droneLevel += 1
+        else if (id === "corrupt-up") corruptLevel += 1
         else if (id === "burst-up") burstLevel += 1
         else if (id === "burst-multi-up") burstMultiLevel += 1
         else if (id === "burst-spread-up") burstSpreadLevel += 1
@@ -1606,6 +1787,8 @@ ShellRoot {
         else if (id === "evolve-turret") { turretEvolved = true; announceEvolution("OVERWATCH PROTOCOL") }
         else if (id === "evolve-boomerang") { boomerangEvolved = true; announceEvolution("ECHO STORM") }
         else if (id === "evolve-missile") { missileEvolved = true; announceEvolution("SATURATION STRIKE") }
+        else if (id === "evolve-drone") { droneEvolved = true; announceEvolution("SENTINEL ARRAY") }
+        else if (id === "evolve-corrupt") { corruptEvolved = true; announceEvolution("BLACKOUT STRAIN") }
         upgradeChoices = []
         mode = "playing"
       }
@@ -1780,6 +1963,8 @@ ShellRoot {
         updateBeams(dt)
         updateBoomerangs(dt)
         updateMissiles(dt)
+        updateDrones(dt)
+        updateCorrupt(dt)
         updateEnemies(dt)
         if (mode !== "playing") return
         if (waveKills >= waveKillTarget) { completeWave(); return }
@@ -2244,6 +2429,13 @@ ShellRoot {
                   context.beginPath(); context.arc(en.x, en.y, en.radius + 6, 0, Math.PI * 2); context.stroke()
                   context.globalAlpha = 1
                 }
+                if (en.corruptTimer > 0) {
+                  context.globalAlpha = 0.3 + 0.25 * Math.sin(game.animationTime * 6)
+                  context.strokeStyle = theme.green
+                  context.lineWidth = 1.8
+                  context.beginPath(); context.arc(en.x, en.y, en.radius + 4, 0, Math.PI * 2); context.stroke()
+                  context.globalAlpha = 1
+                }
                 if (en.type === "rootkit" || game.isBossType(en.type)) {
                   context.fillStyle = theme.foreground
                   context.font = "bold 9px monospace"
@@ -2355,11 +2547,25 @@ ShellRoot {
               }
               context.globalAlpha = 1
 
+              for (var dri = 0; dri < game.drones.length; dri++) {
+                var drone = game.drones[dri]
+                var droneCol = game.droneEvolved ? theme.yellow : theme.green
+                context.globalAlpha = 0.85
+                context.strokeStyle = droneCol
+                context.lineWidth = 2
+                context.beginPath(); context.arc(drone.x, drone.y, 7, 0, Math.PI * 2); context.stroke()
+                context.fillStyle = theme.background
+                context.beginPath(); context.arc(drone.x, drone.y, 7, 0, Math.PI * 2); context.fill()
+                context.fillStyle = droneCol
+                context.beginPath(); context.arc(drone.x, drone.y, 2.6, 0, Math.PI * 2); context.fill()
+              }
+              context.globalAlpha = 1
+
               for (var bmi = 0; bmi < game.beams.length; bmi++) {
                 var beam = game.beams[bmi]
                 var beamAlpha = Math.max(0, 1 - beam.life / beam.duration)
                 context.globalAlpha = beamAlpha
-                context.strokeStyle = beam.evolved ? theme.yellow : theme.red
+                context.strokeStyle = beam.kind === "drone" ? (beam.evolved ? theme.yellow : theme.green) : (beam.evolved ? theme.yellow : theme.red)
                 context.lineWidth = 2.6
                 context.beginPath(); context.moveTo(beam.x1, beam.y1); context.lineTo(beam.x2, beam.y2); context.stroke()
                 context.globalAlpha = beamAlpha * 0.6
@@ -2583,11 +2789,13 @@ ShellRoot {
               Text { text: game.turretStatusText(); color: game.turretEvolved ? theme.yellow : (game.turretLevel > 0 ? theme.accent : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Text { text: game.boomerangStatusText(); color: game.boomerangEvolved ? theme.yellow : (game.boomerangLevel > 0 ? theme.accent : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Text { text: game.missileStatusText(); color: game.missileEvolved ? theme.yellow : (game.missileLevel > 0 ? theme.orange : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
+              Text { text: game.droneStatusText(); color: game.droneEvolved ? theme.yellow : (game.droneLevel > 0 ? theme.green : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
+              Text { text: game.corruptStatusText(); color: game.corruptEvolved ? theme.yellow : (game.corruptLevel > 0 ? theme.orange : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Rectangle { visible: game.speedBonus > 0 || game.pickupBonus > 0 || game.maxHp > 5 || game.xpBonus > 0 || game.shieldBonus > 0 || game.regenLevel > 0 || game.failoverCharges > 0 || game.critLevel > 0 || game.slowAuraLevel > 0 || game.siphonLevel > 0 || game.armorLevel > 0 || game.comboLevel > 0; width: parent.width; height: 1; color: theme.muted }
               Text { visible: game.speedBonus > 0; text: "SPD    +" + (game.speedBonus * 15) + "%  " + game.levelTag(game.speedBonus, game.catalystMaxLevel); color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
-              Text { visible: game.pickupBonus > 0; text: "SCAN   +" + game.pickupBonus; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { visible: game.pickupBonus > 0; text: "SCAN   +" + game.pickupBonus + "  " + game.levelTag(game.pickupBonus, game.catalystMaxLevel); color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.maxHp > 5; text: "MAX HP " + game.maxHp; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
-              Text { visible: game.xpBonus > 0; text: "CACHE  +" + game.xpBonus; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { visible: game.xpBonus > 0; text: "CACHE  +" + game.xpBonus + "  " + game.levelTag(game.xpBonus, game.catalystMaxLevel); color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.shieldBonus > 0; text: "SHIELD +" + game.shieldBonus + "  " + game.levelTag(game.shieldBonus, game.catalystMaxLevel); color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.regenLevel > 0; text: "REGEN  " + game.levelTag(game.regenLevel, game.catalystMaxLevel); color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.failoverCharges > 0; text: "FAILOVER x" + game.failoverCharges; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }

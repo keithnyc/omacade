@@ -606,7 +606,7 @@ class OmacadeTests(unittest.TestCase):
         # Weapon evolutions: each weapon pairs with a maxed catalyst passive to unlock a
         # one-time evolved form, tracked via a bool flag and surfaced in the HUD/level-up UI.
         self.assertIn("function announceEvolution(name)", swarm)
-        for flag in ("burstEvolved", "ringEvolved", "orbitEvolved", "chainEvolved", "mineEvolved", "turretEvolved", "boomerangEvolved", "missileEvolved"):
+        for flag in ("burstEvolved", "ringEvolved", "orbitEvolved", "chainEvolved", "mineEvolved", "turretEvolved", "boomerangEvolved", "missileEvolved", "droneEvolved", "corruptEvolved"):
             self.assertIn(f"property bool {flag}: false", swarm)
         for evolve_id, catalyst_check in (
             ('id === "evolve-burst"', "burstLevel >= burstMaxLevel && speedBonus >= catalystMaxLevel"),
@@ -617,17 +617,67 @@ class OmacadeTests(unittest.TestCase):
             ('id === "evolve-turret"', "turretLevel >= turretMaxLevel && armorLevel >= catalystMaxLevel"),
             ('id === "evolve-boomerang"', "boomerangLevel >= boomerangMaxLevel && comboLevel >= catalystMaxLevel"),
             ('id === "evolve-missile"', "missileLevel >= missileMaxLevel && siphonLevel >= catalystMaxLevel"),
+            ('id === "evolve-drone"', "droneLevel >= droneMaxLevel && pickupBonus >= catalystMaxLevel"),
+            ('id === "evolve-corrupt"', "corruptLevel >= corruptMaxLevel && xpBonus >= catalystMaxLevel"),
         ):
             self.assertIn(evolve_id, swarm)
             self.assertIn(catalyst_check, swarm)
         # HUD status text functions surface Lv/max progress and a READY tag pre-evolution,
         # then the evolved weapon name post-evolution -- the tracking indicators requested.
-        for status_fn in ("burstStatusText", "ringStatusText", "orbitStatusText", "chainStatusText", "mineStatusText", "turretStatusText", "boomerangStatusText", "missileStatusText"):
+        for status_fn in ("burstStatusText", "ringStatusText", "orbitStatusText", "chainStatusText", "mineStatusText", "turretStatusText", "boomerangStatusText", "missileStatusText", "droneStatusText", "corruptStatusText"):
             self.assertIn(f"function {status_fn}()", swarm)
         self.assertIn('ready ? "  READY" : ""', swarm)
         # Evolution cards are visually flagged on the level-up screen.
         self.assertIn('isEvolution: modelData.id.indexOf("evolve-") === 0', swarm)
         self.assertIn('orb.kind === "magnet"', swarm)
+
+        # Evolutions were unreachable by wave 80 in practice: 16-20 dedicated picks on two
+        # specific entries out of a uniformly-random ~20+ item pool. rollUpgrades() now
+        # guarantees an eligible evolve card and weights in-progress weapons/catalysts higher.
+        self.assertIn("function upgradeWeight(entry)", swarm)
+        for weighted_id, level_prop in (
+            ("burst-up", "burstLevel"), ("ring-up", "ringLevel"), ("orbit-up", "orbitLevel"),
+            ("chain-up", "chainLevel"), ("mine-up", "mineLevel"), ("turret-up", "turretLevel"),
+            ("boomerang-up", "boomerangLevel"), ("missile-up", "missileLevel"),
+            ("drone-up", "droneLevel"), ("corrupt-up", "corruptLevel"),
+            ("speed-up", "speedBonus"), ("shield-up", "shieldBonus"), ("slow-aura-up", "slowAuraLevel"),
+            ("crit-up", "critLevel"), ("regen-up", "regenLevel"), ("armor-up", "armorLevel"),
+            ("combo-up", "comboLevel"), ("siphon-up", "siphonLevel"),
+            ("pickup-up", "pickupBonus"), ("xp-up", "xpBonus"),
+        ):
+            self.assertIn(f'if (entry.id === "{weighted_id}" && {level_prop} > 0) return 3', swarm)
+        self.assertIn("function weightedPick(list)", swarm)
+        self.assertIn("if (working[e].id.indexOf(\"evolve-\") === 0) {", swarm)
+
+        # Two new weapons requested directly ("lets do the drone and corrupt field"):
+        # Sentinel Drone -- a mobile, ranged, autonomous companion (unlike stationary
+        # Auto-Turret or melee-contact Patch Orbit) that orbits the player and snipes the
+        # nearest threat in range on its own cooldown. Catalyst is Wide Scan (pickupBonus);
+        # evolution (SENTINEL ARRAY) adds a 4th drone and fires faster/harder.
+        self.assertIn("function updateDrones(dt)", swarm)
+        self.assertIn('id === "unlock-drone"', swarm)
+        self.assertIn('id === "drone-up"', swarm)
+        self.assertIn("readonly property int droneMaxLevel: 8", swarm)
+        self.assertIn("readonly property int droneCount: Math.min(droneEvolved ? 4 : 3, 1 + Math.floor(droneLevel / 3))", swarm)
+        self.assertIn("readonly property real droneOrbitRadius: 110", swarm)
+        self.assertIn("readonly property real droneFireInterval: Math.max(0.45, 1.5 - droneLevel * 0.12) * (droneEvolved ? 0.6 : 1)", swarm)
+        self.assertIn("readonly property int droneDamage: (2 + Math.floor(droneLevel * 1.4)) + (droneEvolved ? 3 : 0)", swarm)
+        self.assertIn('id === "evolve-drone") { droneEvolved = true; announceEvolution("SENTINEL ARRAY") }', swarm)
+
+        # Corrupt Field -- the only sustained/spreading weapon (everything else is an instant
+        # hit): infects the nearest enemy with a damage-over-time tick that can jump to nearby
+        # clean enemies. Catalyst is Cache Boost (xpBonus); evolution (BLACKOUT STRAIN) makes
+        # the spread guaranteed every tick instead of a chance, and hits harder.
+        self.assertIn("function updateCorrupt(dt)", swarm)
+        self.assertIn("function infectEnemy(e)", swarm)
+        self.assertIn("function fireCorrupt()", swarm)
+        self.assertIn('id === "unlock-corrupt"', swarm)
+        self.assertIn('id === "corrupt-up"', swarm)
+        self.assertIn("readonly property int corruptMaxLevel: 8", swarm)
+        self.assertIn("readonly property real corruptDuration: 3.0 + corruptLevel * 0.4", swarm)
+        self.assertIn("readonly property real corruptSpreadChance: corruptEvolved ? 1 : Math.min(0.6, 0.15 + corruptLevel * 0.05)", swarm)
+        self.assertIn("readonly property int corruptDamage: (1 + Math.floor(corruptLevel * 0.7)) + (corruptEvolved ? 2 : 0)", swarm)
+        self.assertIn('id === "evolve-corrupt") { corruptEvolved = true; announceEvolution("BLACKOUT STRAIN") }', swarm)
 
         # Random mini-boss variety + off-milestone boss chance at high waves.
         self.assertIn("function isBossType(type)", swarm)
@@ -838,7 +888,7 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn('{ id: poiId, type: "lair", x: lp.x, y: lp.y, state: "dormant" }', swarm)
         self.assertIn("if (dist < lairWakeRadius) {", swarm)
         self.assertIn("lairEnemy.lairId = poi.id", swarm)
-        self.assertIn("orbitCooldown: 0, modifier: null, lairId: null }", swarm)
+        self.assertIn("orbitCooldown: 0, modifier: null, lairId: null, corruptTimer: 0, corruptTick: 0 }", swarm)
         self.assertIn("if (e.lairId) resolveLairKill(e)", swarm)
         self.assertIn("function resolveLairKill(e)", swarm)
         # Relay: channel to capture, then fires at nearby enemies like a fixed turret forever.
