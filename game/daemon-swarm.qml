@@ -68,7 +68,16 @@ ShellRoot {
       readonly property int orbitDamage: 1 + orbitLevel + (orbitEvolved ? 2 : 0)
       readonly property int orbitShardCap: 10
       readonly property int orbitShardCount: Math.min(orbitLevel, orbitShardCap)
-      readonly property int maxEnemies: Math.min(240, 90 + wave * 7)
+      // Pulled back again after live-measuring wave 35+ with a stacked build (8+ active
+      // weapons): the Canvas rasterization thread was pinned at 75-85% of a single core while
+      // the actual game-logic thread sat around 35% -- this is a draw-call volume problem, not
+      // a logic-cost problem. See enemyGlowThreshold below for the render-side half of the fix.
+      readonly property int maxEnemies: Math.min(200, 90 + wave * 6)
+      // Above this many concurrent enemies, skip the purely-decorative ambient glow underlay
+      // each enemy draws (2+ extra canvas calls apiece) -- invisible in practice once the
+      // screen is already this dense, but it's the single biggest per-enemy draw-call cut
+      // available without touching body shapes or status indicators players rely on.
+      readonly property int enemyGlowThreshold: 120
       // Width of the rotating gap in the regular spawn ring -- see edgeSpawnPoint().
       readonly property real openLaneWidth: Math.PI * 0.55
       // These are evolution-readiness thresholds, not hard caps -- every "-up" upgrade
@@ -2519,17 +2528,20 @@ ShellRoot {
               }
               context.globalAlpha = 1
 
+              var showEnemyGlow = game.enemies.length < game.enemyGlowThreshold
               for (var ei = 0; ei < game.enemies.length; ei++) {
                 var en = game.enemies[ei]
                 var col = game.colorFor(en.colorKey)
                 var flashed = en.hitFlash > 0
                 context.save()
                 context.translate(en.x, en.y)
-                context.globalAlpha = 0.16
-                context.strokeStyle = col
-                context.lineWidth = en.radius * 0.9
-                context.beginPath(); context.arc(0, 0, en.radius * 0.6, 0, Math.PI * 2); context.stroke()
-                context.globalAlpha = 1
+                if (showEnemyGlow) {
+                  context.globalAlpha = 0.16
+                  context.strokeStyle = col
+                  context.lineWidth = en.radius * 0.9
+                  context.beginPath(); context.arc(0, 0, en.radius * 0.6, 0, Math.PI * 2); context.stroke()
+                  context.globalAlpha = 1
+                }
                 context.strokeStyle = flashed ? theme.foreground : col
                 context.fillStyle = flashed ? theme.foreground : theme.background
                 context.lineWidth = 2.2

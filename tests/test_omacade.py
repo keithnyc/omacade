@@ -553,7 +553,14 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("function rollUpgrades()", swarm)
         self.assertIn('type === "rootkit"', swarm)
         self.assertIn('if (e.type === "fork")', swarm)
-        self.assertIn("readonly property int maxEnemies: Math.min(240, 90 + wave * 7)", swarm)
+        self.assertIn("readonly property int maxEnemies: Math.min(200, 90 + wave * 6)", swarm)
+        # Live-measured with top -H: the Canvas rasterization thread was pinned at 75-85% of a
+        # single core at wave 35+ with a stacked build, while the JS logic thread sat ~35% --
+        # a draw-call volume problem. maxEnemies pulled back further, and past a density
+        # threshold the purely-decorative per-enemy glow underlay is skipped entirely.
+        self.assertIn("readonly property int enemyGlowThreshold: 120", swarm)
+        self.assertIn("var showEnemyGlow = game.enemies.length < game.enemyGlowThreshold", swarm)
+        self.assertIn("if (showEnemyGlow) {", swarm)
         self.assertIn('difficulty: "swarm"', swarm)
         self.assertIn("stage: wave,", swarm)
         self.assertIn("time: Math.round(elapsed), kills: kills, elites: elites, level: level", swarm)
