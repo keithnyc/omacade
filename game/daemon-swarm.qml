@@ -147,6 +147,19 @@ ShellRoot {
       // getting O(n) hit-scanned by every active weapon. Fewer, tougher enemies instead.
       readonly property real enemyHpMul: (1 + wave * 0.16) * waveHardening
       readonly property real enemyDamageMul: (1 + wave * 0.035) * Math.pow(1.02, Math.max(0, wave - 15))
+      // Evil Otto (Berzerk homage): a relentless single pursuer that shows up after the player
+      // holds still too long, punishing turtling rather than randomly threatening the player.
+      // Tracks literal stillness (no movement input held), not kills or wave duration -- weapons
+      // auto-fire regardless of player position, so a parked player still racks up kills; the
+      // thing worth punishing is not moving. Deliberately NOT unkillable -- finite HP like
+      // everything else, immune only to slow effects, and its own chase-speed ramp is capped so
+      // it's real pressure, never a guaranteed death sentence. Clearing the wave (enemies = [])
+      // removes it just like anything else, so "just finish the wave" is always a valid escape
+      // alongside actually fighting it.
+      readonly property int ottoMinWave: 3
+      readonly property real ottoStallTime: Math.max(8, 16 - wave * 0.1)
+      readonly property real ottoAccelRate: 0.03
+      readonly property real ottoMaxAccelMul: 1.6
 
       property string mode: "attract"
       property string modeBeforeScores: "attract"
@@ -230,6 +243,10 @@ ShellRoot {
       property real eliteCooldown: 30
       property real eliteWarning: 0
       property var eliteWarningPos: ({ x: 0, y: 0 })
+      property real waveTimer: 0
+      property bool ottoActive: false
+      property real ottoWarning: 0
+      property var ottoWarningPos: ({ x: 0, y: 0 })
       property real animationTime: 0
       property real damageFlash: 0
       property real killFlash: 0
@@ -493,6 +510,9 @@ ShellRoot {
         openLaneTimer = 4.5
         eliteCooldown = 30
         eliteWarning = 0
+        waveTimer = 0
+        ottoActive = false
+        ottoWarning = 0
         enemies = []
         pois = generatePois()
         orbs = []
@@ -532,6 +552,7 @@ ShellRoot {
         if (type === "boss") return { hp: 70, speed: 44, radius: 32, damage: 3, xp: 40, score: 900, color: "red" }
         if (type === "boss-swift") return { hp: 46, speed: 80, radius: 26, damage: 3, xp: 44, score: 950, color: "yellow" }
         if (type === "boss-tank") return { hp: 130, speed: 30, radius: 38, damage: 4, xp: 50, score: 1050, color: "accent" }
+        if (type === "otto") return { hp: 100, speed: 130, radius: 24, damage: 3, xp: 26, score: 600, color: "red" }
         return { hp: 18, speed: 62, radius: 21, damage: 2, xp: 18, score: 400, color: "accent" }
       }
 
@@ -1382,8 +1403,8 @@ ShellRoot {
 
       function dropLoot(e) {
         var updated = orbs.slice(0)
-        if (e.type === "rootkit" || isBossType(e.type)) {
-          var lootCount = isBossType(e.type) ? 8 : 4
+        if (e.type === "rootkit" || isBossType(e.type) || e.type === "otto") {
+          var lootCount = (isBossType(e.type) || e.type === "otto") ? 8 : 4
           var perOrb = Math.max(1, Math.round((e.xp * 1.5) / lootCount))
           for (var i = 0; i < lootCount; i++) {
             var ang = Math.random() * Math.PI * 2
@@ -1410,8 +1431,8 @@ ShellRoot {
           hp += 1
           spawnPop(playerX, playerY, "green", 24, 0.3)
         }
-        if (e.type === "rootkit" || isBossType(e.type)) {
-          statusMessage = (isBossType(e.type) ? "MINI-BOSS PURGED // +" : "ROOTKIT PURGED // +") + e.score
+        if (e.type === "rootkit" || isBossType(e.type) || e.type === "otto") {
+          statusMessage = (e.type === "otto" ? "EVIL OTTO NEUTRALIZED // +" : isBossType(e.type) ? "MINI-BOSS PURGED // +" : "ROOTKIT PURGED // +") + e.score
           spawnBurst(e.x, e.y, e.colorKey, 46, 260, 0.8)
           spawnBurst(e.x, e.y, "foreground", 14, 320, 0.5)
           spawnPop(e.x, e.y, e.colorKey, 90, 0.55)
@@ -1538,7 +1559,14 @@ ShellRoot {
           var dy = playerY - e.y
           var dist = Math.sqrt(dx * dx + dy * dy) || 1
           var effSpeed = e.speed
-          if (slowAuraLevel > 0 && dist < slowAuraRadius) effSpeed *= Math.max(0.35, 1 - slowAuraLevel * 0.15)
+          if (e.type === "otto") {
+            // Relentless -- immune to the slow aura, and gets faster the longer it's been
+            // chasing, capped well short of "impossible to outrun" (ottoMaxAccelMul).
+            e.ottoLife = (e.ottoLife || 0) + dt
+            effSpeed *= Math.min(ottoMaxAccelMul, 1 + e.ottoLife * ottoAccelRate)
+          } else if (slowAuraLevel > 0 && dist < slowAuraRadius) {
+            effSpeed *= Math.max(0.35, 1 - slowAuraLevel * 0.15)
+          }
           e.x += dx / dist * effSpeed * dt
           e.y += dy / dist * effSpeed * dt
           if (dist < playerRadius + e.radius) damagePlayer(e.damage)
@@ -1831,6 +1859,9 @@ ShellRoot {
       function completeWave() {
         wave += 1
         waveKills = 0
+        waveTimer = 0
+        ottoActive = false
+        ottoWarning = 0
         enemies = []
         mines = []
         bolts = []
@@ -1901,6 +1932,38 @@ ShellRoot {
         if (milestone) return true
         var bonusChance = wave >= 16 ? Math.min(0.45, (wave - 16) * 0.012) : 0
         return bonusChance > 0 && Math.random() < bonusChance
+      }
+
+      function spawnOtto() {
+        if (enemies.length >= maxEnemies) return
+        var enemy = makeEnemy("otto", ottoWarningPos)
+        enemy.ottoLife = 0
+        enemies = enemies.concat([enemy])
+        statusMessage = "EVIL OTTO // RUN"
+        spawnBurst(ottoWarningPos.x, ottoWarningPos.y, "red", 40, 260, 0.7)
+        spawnPop(ottoWarningPos.x, ottoWarningPos.y, "red", 110, 0.6)
+        spawnShake(9, 0.35)
+        shell.play(hitSound)
+      }
+
+      // waveTimer here tracks continuous stillness, not wave duration -- see the comment on
+      // ottoStallTime for why (auto-fire means kill count/wave time don't detect turtling).
+      function updateOtto(dt) {
+        if (ottoWarning > 0) {
+          ottoWarning -= dt
+          if (ottoWarning <= 0) spawnOtto()
+          return
+        }
+        if (leftHeld || rightHeld || upHeld || downHeld || dashTimer > 0) waveTimer = 0
+        else waveTimer += dt
+        if (ottoActive || wave < ottoMinWave) return
+        if (waveTimer >= ottoStallTime) {
+          ottoActive = true
+          ottoWarningPos = edgeSpawnPoint(true)
+          ottoWarning = 1.6
+          statusMessage = "STALL DETECTED // EVIL OTTO INBOUND"
+          spawnShake(4, 0.2)
+        }
       }
 
       function finishRun() {
@@ -1980,6 +2043,7 @@ ShellRoot {
         updateOpenLane(dt)
         updateSpawns(dt)
         updateElite(dt)
+        updateOtto(dt)
         updatePois(dt)
       }
 
@@ -2263,6 +2327,15 @@ ShellRoot {
                 context.globalAlpha = 1
               }
 
+              if (game.ottoWarning > 0) {
+                var ottoWarnPulse = 34 + 18 * Math.sin(game.animationTime * 16)
+                context.globalAlpha = 0.7
+                context.strokeStyle = theme.red
+                context.lineWidth = 3.4
+                context.beginPath(); context.arc(game.ottoWarningPos.x, game.ottoWarningPos.y, ottoWarnPulse, 0, Math.PI * 2); context.stroke()
+                context.globalAlpha = 1
+              }
+
               for (var pi = 0; pi < game.pois.length; pi++) {
                 var poi = game.pois[pi]
                 if (poi.type === "lair" && poi.state === "dormant") {
@@ -2403,6 +2476,15 @@ ShellRoot {
                   context.globalAlpha = 0.6
                   context.beginPath(); context.arc(0, 0, en.radius * 0.45, 0, Math.PI * 2); context.stroke()
                   context.globalAlpha = 1
+                } else if (en.type === "otto") {
+                  context.beginPath(); context.arc(0, 0, en.radius, 0, Math.PI * 2); context.closePath(); context.fill(); context.stroke()
+                  context.fillStyle = flashed ? theme.foreground : col
+                  var ottoEyeX = en.radius * 0.35, ottoEyeY = -en.radius * 0.2, ottoEyeR = Math.max(1.4, en.radius * 0.14)
+                  context.beginPath(); context.arc(-ottoEyeX, ottoEyeY, ottoEyeR, 0, Math.PI * 2); context.fill()
+                  context.beginPath(); context.arc(ottoEyeX, ottoEyeY, ottoEyeR, 0, Math.PI * 2); context.fill()
+                  context.strokeStyle = flashed ? theme.foreground : col
+                  context.lineWidth = 2
+                  context.beginPath(); context.arc(0, en.radius * 0.05, en.radius * 0.55, 0.15 * Math.PI, 0.85 * Math.PI); context.stroke()
                 } else {
                   context.rotate(game.animationTime * 0.8)
                   context.beginPath()
@@ -2453,7 +2535,7 @@ ShellRoot {
                   context.lineWidth = 2.4
                   context.beginPath(); context.moveTo(en.x - 7, corruptBarY); context.lineTo(en.x - 7 + 14 * corruptRatio, corruptBarY); context.stroke()
                 }
-                if (en.type === "rootkit" || game.isBossType(en.type)) {
+                if (en.type === "rootkit" || game.isBossType(en.type) || en.type === "otto") {
                   context.fillStyle = theme.foreground
                   context.font = "bold 9px monospace"
                   context.textAlign = "center"

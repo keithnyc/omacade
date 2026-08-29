@@ -602,7 +602,7 @@ class OmacadeTests(unittest.TestCase):
 
         # Elites drop multiple loot packets; kills roll a rare magnet pickup that sweeps the field.
         self.assertIn("function dropLoot(e)", swarm)
-        self.assertIn("var lootCount = isBossType(e.type) ? 8 : 4", swarm)
+        self.assertIn('var lootCount = (isBossType(e.type) || e.type === "otto") ? 8 : 4', swarm)
         self.assertIn("function hasMagnetOrb()", swarm)
         self.assertIn("function triggerMagnetBurst()", swarm)
 
@@ -687,6 +687,39 @@ class OmacadeTests(unittest.TestCase):
         # so the bar stays accurate even if the player levels the weapon mid-infection.
         self.assertIn("e.corruptMaxTimer = corruptDuration", swarm)
         self.assertIn("var corruptRatio = Math.max(0, Math.min(1, en.corruptTimer / (en.corruptMaxTimer || 1)))", swarm)
+
+        # Evil Otto (Berzerk homage), requested directly: a relentless single pursuer that
+        # shows up after the player holds still too long. Tracks literal stillness (no movement
+        # input, no dash) rather than kills or wave duration, since weapons auto-fire regardless
+        # of player position -- a parked player still racks up kills, so kill/time-based
+        # detection wouldn't catch the thing this is meant to punish. Deliberately killable
+        # (finite HP, not truly unkillable) so it's real pressure, not a certain death sentence;
+        # clearing the wave always removes it too, so finishing the wave is a valid escape.
+        self.assertIn('if (type === "otto") return { hp: 100, speed: 130, radius: 24, damage: 3, xp: 26, score: 600, color: "red" }', swarm)
+        self.assertIn("readonly property int ottoMinWave: 3", swarm)
+        self.assertIn("readonly property real ottoStallTime: Math.max(8, 16 - wave * 0.1)", swarm)
+        self.assertIn("readonly property real ottoAccelRate: 0.03", swarm)
+        self.assertIn("readonly property real ottoMaxAccelMul: 1.6", swarm)
+        self.assertIn("function spawnOtto()", swarm)
+        self.assertIn("function updateOtto(dt)", swarm)
+        self.assertIn("if (leftHeld || rightHeld || upHeld || downHeld || dashTimer > 0) waveTimer = 0", swarm)
+        self.assertIn("else waveTimer += dt", swarm)
+        self.assertIn('statusMessage = "STALL DETECTED // EVIL OTTO INBOUND"', swarm)
+        self.assertIn('statusMessage = "EVIL OTTO // RUN"', swarm)
+        self.assertIn('statusMessage = (e.type === "otto" ? "EVIL OTTO NEUTRALIZED // +" : isBossType(e.type) ? "MINI-BOSS PURGED // +" : "ROOTKIT PURGED // +") + e.score', swarm)
+        # Immune to slow effects (relentless), but not to damage -- and its own accel ramp is
+        # capped, so it's never literally impossible to outrun.
+        self.assertIn("e.ottoLife = (e.ottoLife || 0) + dt", swarm)
+        self.assertIn("effSpeed *= Math.min(ottoMaxAccelMul, 1 + e.ottoLife * ottoAccelRate)", swarm)
+        # Boss-tier loot and reward on a kill, since fighting it (instead of just finishing the
+        # wave) is meant to be a high-risk, high-reward choice.
+        self.assertEqual(swarm.count('e.type === "rootkit" || isBossType(e.type) || e.type === "otto"'), 2)
+        # Warning telegraph before it actually spawns, same pattern as the elite warning ring.
+        self.assertIn("game.ottoWarning > 0", swarm)
+        self.assertIn("game.ottoWarningPos.x, game.ottoWarningPos.y, ottoWarnPulse", swarm)
+        # Smiley-face render + always-on HP readout, so the player can judge whether to fight or flee.
+        self.assertIn('} else if (en.type === "otto") {', swarm)
+        self.assertIn('if (en.type === "rootkit" || game.isBossType(en.type) || en.type === "otto") {', swarm)
 
         # Random mini-boss variety + off-milestone boss chance at high waves.
         self.assertIn("function isBossType(type)", swarm)
