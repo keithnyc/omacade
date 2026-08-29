@@ -642,11 +642,11 @@ class OmacadeTests(unittest.TestCase):
             ("burst-up", "burstLevel"), ("ring-up", "ringLevel"), ("orbit-up", "orbitLevel"),
             ("chain-up", "chainLevel"), ("mine-up", "mineLevel"), ("turret-up", "turretLevel"),
             ("boomerang-up", "boomerangLevel"), ("missile-up", "missileLevel"),
-            ("drone-up", "droneLevel"), ("corrupt-up", "corruptLevel"),
+            ("drone-up", "droneLevel"), ("corrupt-up", "corruptLevel"), ("ember-up", "emberLevel"),
             ("speed-up", "speedBonus"), ("shield-up", "shieldBonus"), ("slow-aura-up", "slowAuraLevel"),
             ("crit-up", "critLevel"), ("regen-up", "regenLevel"), ("armor-up", "armorLevel"),
             ("combo-up", "comboLevel"), ("siphon-up", "siphonLevel"),
-            ("pickup-up", "pickupBonus"), ("xp-up", "xpBonus"),
+            ("pickup-up", "pickupBonus"), ("xp-up", "xpBonus"), ("failover-up", "failoverCharges"),
         ):
             self.assertIn(f'if (entry.id === "{weighted_id}" && {level_prop} > 0) return 3', swarm)
         self.assertIn("function weightedPick(list)", swarm)
@@ -656,7 +656,7 @@ class OmacadeTests(unittest.TestCase):
         # Sentinel Drone -- a mobile, ranged, autonomous companion (unlike stationary
         # Auto-Turret or melee-contact Patch Orbit) that orbits the player and snipes the
         # nearest threat in range on its own cooldown. Catalyst is Wide Scan (pickupBonus);
-        # evolution (SENTINEL ARRAY) adds a 4th drone and fires faster/harder.
+        # evolution (SENTINEL ARRAY) raises the drone cap and fires faster/harder.
         self.assertIn("function updateDrones(dt)", swarm)
         self.assertIn('id === "unlock-drone"', swarm)
         self.assertIn('id === "drone-up"', swarm)
@@ -687,6 +687,35 @@ class OmacadeTests(unittest.TestCase):
         # so the bar stays accurate even if the player levels the weapon mid-infection.
         self.assertIn("e.corruptMaxTimer = corruptDuration", swarm)
         self.assertIn("var corruptRatio = Math.max(0, Math.min(1, en.corruptTimer / (en.corruptMaxTimer || 1)))", swarm)
+
+        # Ember Trail, requested directly ("wondering if we can add another so corruption
+        # isn't the only DoT viable build. Maybe something with fire?"): a second DoT weapon
+        # with the OPPOSITE delivery model from Corrupt Field -- positional/ground-based
+        # instead of seed-and-spread. Drops a burning patch at the player's position on a
+        # cooldown; anything that walks into an active patch catches fire and keeps its burn
+        # refreshed while it stays inside, decaying once it leaves. Catalyst is Failover
+        # (failoverCharges); evolution (WILDFIRE CASCADE) makes a burning enemy leave a fresh
+        # patch behind when it dies, letting kills in a crowd chain into a self-sustaining fire.
+        # The two DoTs are independent status fields on the enemy (corruptTimer vs burnTimer),
+        # so an enemy can be infected and on fire at once.
+        self.assertIn("function fireEmber()", swarm)
+        self.assertIn("function updateEmber(dt)", swarm)
+        self.assertIn('id === "unlock-ember"', swarm)
+        self.assertIn('id === "ember-up"', swarm)
+        self.assertIn("readonly property int emberMaxLevel: 8", swarm)
+        self.assertIn("readonly property int emberPatchCap: 16", swarm)
+        self.assertIn("readonly property real emberDropInterval: Math.max(0.35, 0.9 - emberLevel * 0.06)", swarm)
+        self.assertIn("readonly property real emberPatchLife: 2.4 + emberLevel * 0.2", swarm)
+        self.assertIn("readonly property real emberPatchRadius: 34 + emberLevel * 3", swarm)
+        self.assertIn("readonly property int emberDamage: (1 + Math.floor(emberLevel * 0.8)) + (emberEvolved ? 3 : 0)", swarm)
+        self.assertIn("readonly property real emberBurnDuration: 1.6 + emberLevel * 0.15", swarm)
+        self.assertIn('id === "evolve-ember") { emberEvolved = true; announceEvolution("WILDFIRE CASCADE") }', swarm)
+        self.assertIn("if (emberEvolved && e.burnTimer > 0) {", swarm)
+        # Same DoT-bar treatment as Corrupt Field, per-ignition duration stashed as
+        # burnMaxTimer, offset above the corrupt bar so both can render at once.
+        self.assertIn("en.burnMaxTimer = emberBurnDuration", swarm)
+        self.assertIn("var burnRatio = Math.max(0, Math.min(1, en.burnTimer / (en.burnMaxTimer || 1)))", swarm)
+        self.assertIn('var burnBarY = en.y - en.radius - (en.corruptTimer > 0 ? 20 : 14)', swarm)
 
         # Evil Otto (Berzerk homage), requested directly: a relentless single pursuer that
         # shows up after the player holds still too long. Tracks literal stillness (no movement
@@ -930,7 +959,7 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn('{ id: poiId, type: "lair", x: lp.x, y: lp.y, state: "dormant" }', swarm)
         self.assertIn("if (dist < lairWakeRadius) {", swarm)
         self.assertIn("lairEnemy.lairId = poi.id", swarm)
-        self.assertIn("orbitCooldown: 0, modifier: null, lairId: null, corruptTimer: 0, corruptTick: 0, corruptMaxTimer: 0 }", swarm)
+        self.assertIn("orbitCooldown: 0, modifier: null, lairId: null, corruptTimer: 0, corruptTick: 0, corruptMaxTimer: 0,\n                 burnTimer: 0, burnTick: 0, burnMaxTimer: 0 }", swarm)
         self.assertIn("if (e.lairId) resolveLairKill(e)", swarm)
         self.assertIn("function resolveLairKill(e)", swarm)
         # Relay: channel to capture, then fires at nearby enemies like a fixed turret forever.

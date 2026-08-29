@@ -83,6 +83,7 @@ ShellRoot {
       readonly property int missileMaxLevel: 8
       readonly property int droneMaxLevel: 8
       readonly property int corruptMaxLevel: 8
+      readonly property int emberMaxLevel: 8
       readonly property int catalystMaxLevel: 10
       // Unlike the thresholds above, these ARE hard caps -- they bound how many simultaneous
       // bolts/mines/turrets can exist at once, which is what actually drives per-frame cost.
@@ -92,6 +93,7 @@ ShellRoot {
       readonly property int mineCapBonusMax: 6
       readonly property int mineCap: 2 + Math.min(mineCapBonus, mineCapBonusMax)
       readonly property int turretCap: Math.min(6, 1 + Math.floor(turretLevel / 2))
+      readonly property int emberPatchCap: 16
       // "Not too fast" per request -- much slower than any of the other projectiles so it
       // reads as a lumbering, guided munition rather than another bolt.
       readonly property real missileSpeed: 230
@@ -115,6 +117,16 @@ ShellRoot {
       readonly property real corruptSpreadRadius: 70 + corruptLevel * 9
       readonly property real corruptSpreadChance: corruptEvolved ? 1 : Math.min(0.6, 0.15 + corruptLevel * 0.05)
       readonly property int corruptDamage: (1 + Math.floor(corruptLevel * 0.7)) + (corruptEvolved ? 2 : 0)
+      // Ember Trail is positional, not targeted -- unlike Corrupt Field's seed-and-spread
+      // infection, this drops a burning patch wherever the player currently is, and anything
+      // that walks into it catches fire. A second DoT flavor with the opposite delivery model,
+      // and the one weapon whose value scales with actually moving through/near enemies.
+      readonly property real emberDropInterval: Math.max(0.35, 0.9 - emberLevel * 0.06)
+      readonly property real emberPatchLife: 2.4 + emberLevel * 0.2
+      readonly property real emberPatchRadius: 34 + emberLevel * 3
+      readonly property real emberTickInterval: 0.4
+      readonly property int emberDamage: (1 + Math.floor(emberLevel * 0.8)) + (emberEvolved ? 3 : 0)
+      readonly property real emberBurnDuration: 1.6 + emberLevel * 0.15
       readonly property real slowAuraRadius: 70 + slowAuraLevel * 22
       readonly property real siphonChance: siphonLevel * 0.06
       // Capped well short of 100% -- this blunts damage, it shouldn't make hits free. The
@@ -208,6 +220,9 @@ ShellRoot {
       property var drones: []
       property int corruptLevel: 0
       property real corruptCooldown: 0
+      property int emberLevel: 0
+      property real emberCooldown: 0
+      property var emberPatches: []
       property int speedBonus: 0
       property int pickupBonus: 0
       property int xpBonus: 0
@@ -233,6 +248,7 @@ ShellRoot {
       property bool missileEvolved: false
       property bool droneEvolved: false
       property bool corruptEvolved: false
+      property bool emberEvolved: false
       property real burstCooldown: 0
       property real ringCooldown: 0
       property real chainCooldown: 0
@@ -378,6 +394,13 @@ ShellRoot {
         return "VIRUS  " + levelTag(corruptLevel, corruptMaxLevel) + (ready ? "  READY" : "")
       }
 
+      function emberStatusText() {
+        if (emberLevel === 0) return "EMBER  --"
+        if (emberEvolved) return "EMBER  WILDFIRE CASCADE  " + levelTag(emberLevel, emberMaxLevel)
+        var ready = emberLevel >= emberMaxLevel && failoverCharges >= catalystMaxLevel
+        return "EMBER  " + levelTag(emberLevel, emberMaxLevel) + (ready ? "  READY" : "")
+      }
+
       function mineStatusText() {
         if (mineLevel === 0) return "MINE   --"
         var tag = mineCascade ? " CHAIN" : ""
@@ -476,6 +499,9 @@ ShellRoot {
         drones = []
         corruptLevel = 0
         corruptCooldown = 0
+        emberLevel = 0
+        emberCooldown = 0
+        emberPatches = []
         speedBonus = 0
         pickupBonus = 0
         xpBonus = 0
@@ -501,6 +527,7 @@ ShellRoot {
         missileEvolved = false
         droneEvolved = false
         corruptEvolved = false
+        emberEvolved = false
         burstCooldown = 0
         ringCooldown = 0
         chainCooldown = 0
@@ -723,7 +750,8 @@ ShellRoot {
                  speed: profile.speed * enemySpeedMul, radius: profile.radius,
                  damage: Math.max(profile.damage, Math.round(profile.damage * enemyDamageMul)),
                  xp: profile.xp, score: profile.score, colorKey: profile.color, hitFlash: 0,
-                 orbitCooldown: 0, modifier: null, lairId: null, corruptTimer: 0, corruptTick: 0, corruptMaxTimer: 0 }
+                 orbitCooldown: 0, modifier: null, lairId: null, corruptTimer: 0, corruptTick: 0, corruptMaxTimer: 0,
+                 burnTimer: 0, burnTick: 0, burnMaxTimer: 0 }
       }
 
       function spawnEnemyAt(type, pos) {
@@ -1315,6 +1343,49 @@ ShellRoot {
         }
       }
 
+      function fireEmber() {
+        if (emberPatches.length >= emberPatchCap) emberPatches = emberPatches.slice(1)
+        var updated = emberPatches.slice(0)
+        updated.push({ x: playerX, y: playerY, life: 0, maxLife: emberPatchLife, radius: emberPatchRadius })
+        emberPatches = updated
+        emberCooldown = emberDropInterval
+      }
+
+      // Positional, not targeted -- anything standing in an active patch keeps its burn
+      // status refreshed; step out and it decays like any other DoT. See emberDropInterval.
+      function updateEmber(dt) {
+        if (emberLevel === 0) { if (emberPatches.length > 0) emberPatches = []; return }
+        var active = []
+        for (var i = 0; i < emberPatches.length; i++) {
+          var p = emberPatches[i]
+          p.life += dt
+          if (p.life < p.maxLife) active.push(p)
+        }
+        emberPatches = active
+        for (var e = 0; e < enemies.length; e++) {
+          var en = enemies[e]
+          var burning = false
+          for (var pi = 0; pi < emberPatches.length; pi++) {
+            var patch = emberPatches[pi]
+            var dx = en.x - patch.x, dy = en.y - patch.y
+            if (dx * dx + dy * dy <= (patch.radius + en.radius) * (patch.radius + en.radius)) { burning = true; break }
+          }
+          if (burning) {
+            en.burnTimer = emberBurnDuration
+            en.burnMaxTimer = emberBurnDuration
+          } else if (en.burnTimer > 0) {
+            en.burnTimer -= dt
+          }
+          if (en.burnTimer > 0) {
+            en.burnTick -= dt
+            if (en.burnTick <= 0) {
+              applyDamage(en, emberDamage, 0.1)
+              en.burnTick = emberTickInterval
+            }
+          }
+        }
+      }
+
       function turretStatusText() {
         if (turretLevel === 0) return "TURRET --"
         if (turretEvolved) return "TURRET OVERWATCH PROTOCOL  " + levelTag(turretLevel, turretMaxLevel) + "  x" + turretCap
@@ -1362,6 +1433,10 @@ ShellRoot {
         if (corruptLevel > 0) {
           corruptCooldown = Math.max(0, corruptCooldown - dt)
           if (corruptCooldown <= 0) fireCorrupt()
+        }
+        if (emberLevel > 0) {
+          emberCooldown = Math.max(0, emberCooldown - dt)
+          if (emberCooldown <= 0) fireEmber()
         }
       }
 
@@ -1549,6 +1624,11 @@ ShellRoot {
             if (e.type === "rootkit" || isBossType(e.type)) elites += 1
             if (e.modifier === "volatile") triggerVolatileDeath(e)
             if (e.lairId) resolveLairKill(e)
+            // EVOLUTION: the fire feeds itself -- a burning enemy that dies leaves a fresh
+            // patch behind, so kills in a crowd can chain into a self-sustaining wildfire.
+            if (emberEvolved && e.burnTimer > 0) {
+              emberPatches = emberPatches.concat([{ x: e.x, y: e.y, life: 0, maxLife: emberPatchLife, radius: emberPatchRadius }])
+            }
             if (e.type === "fork") {
               spawnQueue.push({ x: e.x, y: e.y })
               spawnQueue.push({ x: e.x, y: e.y })
@@ -1642,6 +1722,7 @@ ShellRoot {
         if (missileLevel === 0) pool.push({ id: "unlock-missile", title: "PAYLOAD MISSILE", detail: "Unlock a slow heat-seeking missile with an explosive AoE payload." })
         if (droneLevel === 0) pool.push({ id: "unlock-drone", title: "SENTINEL DRONE", detail: "Deploy an orbiting drone that autonomously snipes the nearest threat." })
         if (corruptLevel === 0) pool.push({ id: "unlock-corrupt", title: "CORRUPT FIELD", detail: "Infect the nearest threat with a damage-over-time corruption that can spread to nearby enemies." })
+        if (emberLevel === 0) pool.push({ id: "unlock-ember", title: "EMBER TRAIL", detail: "Leave a burning trail behind you -- threats that walk through it catch fire and take damage over time." })
         if (ringLevel > 0) pool.push({ id: "ring-up", title: "RING OVERCLOCK", detail: "Firewall Ring: +radius, +damage, faster pulse." })
         if (orbitLevel > 0) pool.push({ id: "orbit-up", title: "ORBIT SHARD", detail: orbitLevel < orbitShardCap ? "Patch Orbit: +1 shard." : "Patch Orbit: +damage per shard (shard count capped)." })
         if (orbitLevel > 0) pool.push({ id: "orbit-range-up", title: "ORBIT EXPANSE", detail: "Patch Orbit: shards orbit further out." })
@@ -1652,8 +1733,9 @@ ShellRoot {
         if (turretLevel > 0) pool.push({ id: "turret-up", title: "TURRET OVERCLOCK", detail: "Auto-Turret: +damage, +range, faster fire and redeploy." })
         if (boomerangLevel > 0) pool.push({ id: "boomerang-up", title: "PING OVERCLOCK", detail: "Ping Boomerang: +damage, +range, faster throw." })
         if (missileLevel > 0) pool.push({ id: "missile-up", title: "PAYLOAD OVERCLOCK", detail: "Payload Missile: +missile count, +blast radius, +damage." })
-        if (droneLevel > 0) pool.push({ id: "drone-up", title: "SENTINEL OVERCLOCK", detail: "Sentinel Drone: +damage, faster fire, +drone every 3 levels (up to 3)." })
+        if (droneLevel > 0) pool.push({ id: "drone-up", title: "SENTINEL OVERCLOCK", detail: "Sentinel Drone: +damage, faster fire, +drone every 3 levels (up to 6)." })
         if (corruptLevel > 0) pool.push({ id: "corrupt-up", title: "STRAIN OVERCLOCK", detail: "Corrupt Field: +damage, longer infection, more likely to spread." })
+        if (emberLevel > 0) pool.push({ id: "ember-up", title: "EMBER OVERCLOCK", detail: "Ember Trail: +damage, bigger/longer patches, faster drop." })
         pool.push({ id: "burst-up", title: "PACKET OVERCLOCK", detail: "Packet Burst: faster fire, +pierce, +damage." })
         if (burstMultiLevel < burstMultiCap) pool.push({ id: "burst-multi-up", title: "PACKET FORK", detail: "Packet Burst: +1 simultaneous target." })
         if (burstSpreadLevel < burstSpreadCap) pool.push({ id: "burst-spread-up", title: "SPREAD ROUTING", detail: "Packet Burst: +2 angled bolts per shot." })
@@ -1687,9 +1769,11 @@ ShellRoot {
         if (!missileEvolved && missileLevel >= missileMaxLevel && siphonLevel >= catalystMaxLevel)
           pool.push({ id: "evolve-missile", title: "SATURATION STRIKE", detail: "EVOLUTION: Payload Missile launches two extra warheads, blasts wider and harder, and reloads faster." })
         if (!droneEvolved && droneLevel >= droneMaxLevel && pickupBonus >= catalystMaxLevel)
-          pool.push({ id: "evolve-drone", title: "SENTINEL ARRAY", detail: "EVOLUTION: Sentinel Drone deploys a 4th unit and fires faster and harder." })
+          pool.push({ id: "evolve-drone", title: "SENTINEL ARRAY", detail: "EVOLUTION: Sentinel Drone's cap rises to 7 units (from further overclocks) and it fires faster and harder." })
         if (!corruptEvolved && corruptLevel >= corruptMaxLevel && xpBonus >= catalystMaxLevel)
           pool.push({ id: "evolve-corrupt", title: "BLACKOUT STRAIN", detail: "EVOLUTION: Corrupt Field always spreads on tick and hits much harder." })
+        if (!emberEvolved && emberLevel >= emberMaxLevel && failoverCharges >= catalystMaxLevel)
+          pool.push({ id: "evolve-ember", title: "WILDFIRE CASCADE", detail: "EVOLUTION: A burning threat that dies leaves a fresh patch behind, letting the fire spread on its own." })
         return pool
       }
 
@@ -1709,6 +1793,7 @@ ShellRoot {
         if (entry.id === "missile-up" && missileLevel > 0) return 3
         if (entry.id === "drone-up" && droneLevel > 0) return 3
         if (entry.id === "corrupt-up" && corruptLevel > 0) return 3
+        if (entry.id === "ember-up" && emberLevel > 0) return 3
         if (entry.id === "speed-up" && speedBonus > 0) return 3
         if (entry.id === "shield-up" && shieldBonus > 0) return 3
         if (entry.id === "slow-aura-up" && slowAuraLevel > 0) return 3
@@ -1719,6 +1804,7 @@ ShellRoot {
         if (entry.id === "siphon-up" && siphonLevel > 0) return 3
         if (entry.id === "pickup-up" && pickupBonus > 0) return 3
         if (entry.id === "xp-up" && xpBonus > 0) return 3
+        if (entry.id === "failover-up" && failoverCharges > 0) return 3
         return 1
       }
 
@@ -1787,6 +1873,7 @@ ShellRoot {
         else if (id === "unlock-missile") { missileLevel = 1; missileCooldown = 1.4 }
         else if (id === "unlock-drone") droneLevel = 1
         else if (id === "unlock-corrupt") { corruptLevel = 1; corruptCooldown = 1.0 }
+        else if (id === "unlock-ember") { emberLevel = 1; emberCooldown = 0.5 }
         else if (id === "ring-up") ringLevel += 1
         else if (id === "orbit-up") orbitLevel += 1
         else if (id === "orbit-range-up") orbitRangeLevel += 1
@@ -1799,6 +1886,7 @@ ShellRoot {
         else if (id === "missile-up") missileLevel += 1
         else if (id === "drone-up") droneLevel += 1
         else if (id === "corrupt-up") corruptLevel += 1
+        else if (id === "ember-up") emberLevel += 1
         else if (id === "burst-up") burstLevel += 1
         else if (id === "burst-multi-up") burstMultiLevel += 1
         else if (id === "burst-spread-up") burstSpreadLevel += 1
@@ -1824,6 +1912,7 @@ ShellRoot {
         else if (id === "evolve-missile") { missileEvolved = true; announceEvolution("SATURATION STRIKE") }
         else if (id === "evolve-drone") { droneEvolved = true; announceEvolution("SENTINEL ARRAY") }
         else if (id === "evolve-corrupt") { corruptEvolved = true; announceEvolution("BLACKOUT STRAIN") }
+        else if (id === "evolve-ember") { emberEvolved = true; announceEvolution("WILDFIRE CASCADE") }
         upgradeChoices = []
         mode = "playing"
       }
@@ -1869,6 +1958,7 @@ ShellRoot {
         chains = []
         boomerangs = []
         missiles = []
+        emberPatches = []
         mode = "wavecomplete"
         waveTransitionLife = 2.0
         spawnBurst(playerX, playerY, "accent", 30, 200, 0.6)
@@ -2035,6 +2125,7 @@ ShellRoot {
         updateMissiles(dt)
         updateDrones(dt)
         updateCorrupt(dt)
+        updateEmber(dt)
         updateEnemies(dt)
         if (mode !== "playing") return
         if (waveKills >= waveKillTarget) { completeWave(); return }
@@ -2535,6 +2626,23 @@ ShellRoot {
                   context.lineWidth = 2.4
                   context.beginPath(); context.moveTo(en.x - 7, corruptBarY); context.lineTo(en.x - 7 + 14 * corruptRatio, corruptBarY); context.stroke()
                 }
+                if (en.burnTimer > 0) {
+                  context.globalAlpha = 0.3 + 0.25 * Math.sin(game.animationTime * 7)
+                  context.strokeStyle = theme.orange
+                  context.lineWidth = 1.8
+                  context.beginPath(); context.arc(en.x, en.y, en.radius + 4, 0, Math.PI * 2); context.stroke()
+                  context.globalAlpha = 1
+                  // Same DoT-bar treatment as Corrupt Field, offset above it so the two can
+                  // both show at once -- nothing stops an enemy from being infected AND on fire.
+                  var burnRatio = Math.max(0, Math.min(1, en.burnTimer / (en.burnMaxTimer || 1)))
+                  var burnBarY = en.y - en.radius - (en.corruptTimer > 0 ? 20 : 14)
+                  context.strokeStyle = theme.muted
+                  context.lineWidth = 2.4
+                  context.beginPath(); context.moveTo(en.x - 7, burnBarY); context.lineTo(en.x + 7, burnBarY); context.stroke()
+                  context.strokeStyle = theme.orange
+                  context.lineWidth = 2.4
+                  context.beginPath(); context.moveTo(en.x - 7, burnBarY); context.lineTo(en.x - 7 + 14 * burnRatio, burnBarY); context.stroke()
+                }
                 if (en.type === "rootkit" || game.isBossType(en.type) || en.type === "otto") {
                   context.fillStyle = theme.foreground
                   context.font = "bold 9px monospace"
@@ -2605,6 +2713,19 @@ ShellRoot {
                 context.lineWidth = 1
                 context.stroke()
                 context.restore()
+              }
+              context.globalAlpha = 1
+
+              for (var epi = 0; epi < game.emberPatches.length; epi++) {
+                var emberPatch = game.emberPatches[epi]
+                var emberFade = Math.max(0, 1 - emberPatch.life / emberPatch.maxLife)
+                context.globalAlpha = emberFade * (0.24 + 0.1 * Math.sin(game.animationTime * 10 + epi))
+                context.fillStyle = theme.orange
+                context.beginPath(); context.arc(emberPatch.x, emberPatch.y, emberPatch.radius, 0, Math.PI * 2); context.fill()
+                context.globalAlpha = emberFade * 0.5
+                context.strokeStyle = theme.yellow
+                context.lineWidth = 1.6
+                context.beginPath(); context.arc(emberPatch.x, emberPatch.y, emberPatch.radius * 0.7, 0, Math.PI * 2); context.stroke()
               }
               context.globalAlpha = 1
 
@@ -2890,6 +3011,7 @@ ShellRoot {
               Text { text: game.missileStatusText(); color: game.missileEvolved ? theme.yellow : (game.missileLevel > 0 ? theme.orange : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Text { text: game.droneStatusText(); color: game.droneEvolved ? theme.yellow : (game.droneLevel > 0 ? theme.green : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Text { text: game.corruptStatusText(); color: game.corruptEvolved ? theme.yellow : (game.corruptLevel > 0 ? theme.orange : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
+              Text { text: game.emberStatusText(); color: game.emberEvolved ? theme.yellow : (game.emberLevel > 0 ? theme.orange : theme.muted); font.pixelSize: 11; font.family: "monospace"; font.bold: true }
               Rectangle { visible: game.speedBonus > 0 || game.pickupBonus > 0 || game.maxHp > 5 || game.xpBonus > 0 || game.shieldBonus > 0 || game.regenLevel > 0 || game.failoverCharges > 0 || game.critLevel > 0 || game.slowAuraLevel > 0 || game.siphonLevel > 0 || game.armorLevel > 0 || game.comboLevel > 0; width: parent.width; height: 1; color: theme.muted }
               Text { visible: game.speedBonus > 0; text: "SPD    +" + (game.speedBonus * 15) + "%  " + game.levelTag(game.speedBonus, game.catalystMaxLevel); color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.pickupBonus > 0; text: "SCAN   +" + game.pickupBonus + "  " + game.levelTag(game.pickupBonus, game.catalystMaxLevel); color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
@@ -2897,7 +3019,7 @@ ShellRoot {
               Text { visible: game.xpBonus > 0; text: "CACHE  +" + game.xpBonus + "  " + game.levelTag(game.xpBonus, game.catalystMaxLevel); color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.shieldBonus > 0; text: "SHIELD +" + game.shieldBonus + "  " + game.levelTag(game.shieldBonus, game.catalystMaxLevel); color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.regenLevel > 0; text: "REGEN  " + game.levelTag(game.regenLevel, game.catalystMaxLevel); color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
-              Text { visible: game.failoverCharges > 0; text: "FAILOVER x" + game.failoverCharges; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
+              Text { visible: game.failoverCharges > 0; text: "FAILOVER x" + game.failoverCharges + "  " + game.levelTag(game.failoverCharges, game.catalystMaxLevel); color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.critLevel > 0; text: "CRIT   +" + (game.critLevel * 10) + "%  " + game.levelTag(game.critLevel, game.catalystMaxLevel); color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.slowAuraLevel > 0; text: "THROTTLE " + game.levelTag(game.slowAuraLevel, game.catalystMaxLevel); color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
               Text { visible: game.siphonLevel > 0; text: "SIPHON +" + Math.round(Math.min(1, game.siphonChance) * 100) + "%  Lv" + game.siphonLevel; color: theme.yellow; font.pixelSize: 10; font.family: "monospace"; font.bold: true }
