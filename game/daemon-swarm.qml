@@ -68,7 +68,9 @@ ShellRoot {
       readonly property int orbitDamage: 1 + orbitLevel + (orbitEvolved ? 2 : 0)
       readonly property int orbitShardCap: 10
       readonly property int orbitShardCount: Math.min(orbitLevel, orbitShardCap)
-      readonly property int maxEnemies: Math.min(240, 90 + wave * 7)
+      readonly property int maxEnemies: Math.min(320, 90 + wave * 9)
+      // Width of the rotating gap in the regular spawn ring -- see edgeSpawnPoint().
+      readonly property real openLaneWidth: Math.PI * 0.55
       // These are evolution-readiness thresholds, not hard caps -- every "-up" upgrade
       // stays in the pool indefinitely past this point so a build keeps growing at wave 50+.
       readonly property int burstMaxLevel: 10
@@ -115,9 +117,12 @@ ShellRoot {
       readonly property real moveSpeed: 190 * (1 + speedBonus * 0.15)
       // Hardening now kicks in earlier (wave 15) and compounds faster so builds face rising
       // resistance well before the extreme late game, instead of coasting until wave 25+.
-      readonly property real waveHardening: Math.pow(1.03, Math.max(0, wave - 15))
-      readonly property real enemySpeedMul: 1 + Math.min(3.2, wave * 0.07)
-      readonly property real enemyHpMul: (1 + wave * 0.1) * waveHardening
+      readonly property real waveHardening: Math.pow(1.045, Math.max(0, wave - 15))
+      // Kept deliberately mild and capped low (max 1.6x) -- enemies should never outrun the
+      // player's base move speed (190). Difficulty instead comes from HP, elite pressure, and
+      // sheer volume below, so standing still isn't the only viable strategy late-game.
+      readonly property real enemySpeedMul: 1 + Math.min(0.6, wave * 0.025)
+      readonly property real enemyHpMul: (1 + wave * 0.14) * waveHardening
       readonly property real enemyDamageMul: (1 + wave * 0.03) * Math.pow(1.015, Math.max(0, wave - 15))
 
       property string mode: "attract"
@@ -191,6 +196,8 @@ ShellRoot {
       property real chainCooldown: 0
       property real mineCooldown: 0
       property real spawnCooldown: 0.6
+      property real openLaneAngle: 0
+      property real openLaneTimer: 4.5
       property real eliteCooldown: 30
       property real eliteWarning: 0
       property var eliteWarningPos: ({ x: 0, y: 0 })
@@ -433,6 +440,8 @@ ShellRoot {
         chainCooldown = 0
         mineCooldown = 0
         spawnCooldown = 0.6
+        openLaneAngle = Math.random() * Math.PI * 2
+        openLaneTimer = 4.5
         eliteCooldown = 30
         eliteWarning = 0
         enemies = []
@@ -493,19 +502,35 @@ ShellRoot {
         return roll < 0.3 ? "worm" : roll < 0.62 ? "fork" : "trojan"
       }
 
-      function edgeSpawnPoint() {
+      function laneAngleGap(a, b) {
+        var d = Math.abs(a - b) % (Math.PI * 2)
+        return d > Math.PI ? Math.PI * 2 - d : d
+      }
+
+      function edgeSpawnPoint(ignoreLane) {
         // Spawns just outside the player's current viewport, not the (much larger) world
         // edges -- with a scrolling camera, spawning at fixed world bounds would place
         // enemies miles from wherever the player actually is.
-        var side = Math.floor(Math.random() * 4)
+        //
+        // Rolling all four sides independently used to let regular spawns eventually ring
+        // the player completely, leaving nowhere to retreat late-game. openLaneAngle carves
+        // a rotating dead zone out of that ring so there's always a way out; elites/bosses
+        // pass ignoreLane=true so they can still show up anywhere and keep pressure on.
         var margin = 30
         var halfW = viewportWidth / 2 + margin
         var halfH = viewportHeight / 2 + margin
-        var x, y
-        if (side === 0) { x = playerX + (Math.random() * 2 - 1) * halfW; y = playerY - halfH }
-        else if (side === 1) { x = playerX + halfW; y = playerY + (Math.random() * 2 - 1) * halfH }
-        else if (side === 2) { x = playerX + (Math.random() * 2 - 1) * halfW; y = playerY + halfH }
-        else { x = playerX - halfW; y = playerY + (Math.random() * 2 - 1) * halfH }
+        var laneHalf = openLaneWidth / 2
+        var x, y, angle
+        var tries = 0
+        do {
+          var side = Math.floor(Math.random() * 4)
+          if (side === 0) { x = playerX + (Math.random() * 2 - 1) * halfW; y = playerY - halfH }
+          else if (side === 1) { x = playerX + halfW; y = playerY + (Math.random() * 2 - 1) * halfH }
+          else if (side === 2) { x = playerX + (Math.random() * 2 - 1) * halfW; y = playerY + halfH }
+          else { x = playerX - halfW; y = playerY + (Math.random() * 2 - 1) * halfH }
+          angle = Math.atan2(y - playerY, x - playerX)
+          tries += 1
+        } while (!ignoreLane && tries < 8 && laneAngleGap(angle, openLaneAngle) < laneHalf)
         return { x: Math.max(10, Math.min(worldWidth - 10, x)), y: Math.max(10, Math.min(worldHeight - 10, y)) }
       }
 
@@ -1632,7 +1657,15 @@ ShellRoot {
       }
 
       function spawnBatchSize() {
-        return Math.min(5, 1 + Math.floor(wave / 7))
+        return Math.min(7, 1 + Math.floor(wave / 6))
+      }
+
+      function updateOpenLane(dt) {
+        openLaneTimer -= dt
+        if (openLaneTimer <= 0) {
+          openLaneAngle = Math.random() * Math.PI * 2
+          openLaneTimer = 3.5 + Math.random() * 2.5
+        }
       }
 
       function updateSpawns(dt) {
@@ -1641,7 +1674,7 @@ ShellRoot {
           var batch = spawnBatchSize()
           for (var i = 0; i < batch && enemies.length < maxEnemies; i++)
             spawnEnemyAt(pickEnemyType(), edgeSpawnPoint())
-          spawnCooldown = Math.max(0.1, 0.85 - wave * 0.03) * (0.75 + Math.random() * 0.5)
+          spawnCooldown = Math.max(0.08, 0.85 - wave * 0.035) * (0.75 + Math.random() * 0.5)
         }
       }
 
@@ -1666,9 +1699,9 @@ ShellRoot {
         }
         eliteCooldown -= dt
         if (eliteCooldown <= 0) {
-          eliteWarningPos = edgeSpawnPoint()
+          eliteWarningPos = edgeSpawnPoint(true)
           eliteWarning = 1.4
-          eliteCooldown = Math.max(16, 42 - wave * 0.6)
+          eliteCooldown = Math.max(11, 36 - wave * 0.7)
           statusMessage = wantsBossSpawn() ? "MINI-BOSS DETECTED // INBOUND" : "ROOTKIT DETECTED // INBOUND"
         }
       }
@@ -1676,7 +1709,7 @@ ShellRoot {
       function wantsBossSpawn() {
         var milestone = wave >= 10 && wave % 5 === 0 && lastBossWave !== wave
         if (milestone) return true
-        var bonusChance = wave >= 20 ? Math.min(0.35, (wave - 20) * 0.01) : 0
+        var bonusChance = wave >= 16 ? Math.min(0.45, (wave - 16) * 0.012) : 0
         return bonusChance > 0 && Math.random() < bonusChance
       }
 
@@ -1752,6 +1785,7 @@ ShellRoot {
         if (waveKills >= waveKillTarget) { completeWave(); return }
         updateOrbs(dt)
         if (mode !== "playing") return
+        updateOpenLane(dt)
         updateSpawns(dt)
         updateElite(dt)
         updatePois(dt)

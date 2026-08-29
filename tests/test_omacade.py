@@ -553,15 +553,16 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("function rollUpgrades()", swarm)
         self.assertIn('type === "rootkit"', swarm)
         self.assertIn('if (e.type === "fork")', swarm)
-        self.assertIn("readonly property int maxEnemies: Math.min(240, 90 + wave * 7)", swarm)
+        self.assertIn("readonly property int maxEnemies: Math.min(320, 90 + wave * 9)", swarm)
         self.assertIn('difficulty: "swarm"', swarm)
         self.assertIn("stage: wave,", swarm)
         self.assertIn("time: Math.round(elapsed), kills: kills, elites: elites, level: level", swarm)
         self.assertIn("function completeWave()", swarm)
         self.assertIn("function rollWaveReward()", swarm)
         self.assertIn("readonly property int waveKillTarget: 8 + wave * 5", swarm)
-        self.assertIn("readonly property real waveHardening: Math.pow(1.03, Math.max(0, wave - 15))", swarm)
-        self.assertIn("readonly property real enemyHpMul: (1 + wave * 0.1) * waveHardening", swarm)
+        self.assertIn("readonly property real waveHardening: Math.pow(1.045, Math.max(0, wave - 15))", swarm)
+        self.assertIn("readonly property real enemySpeedMul: 1 + Math.min(0.6, wave * 0.025)", swarm)
+        self.assertIn("readonly property real enemyHpMul: (1 + wave * 0.14) * waveHardening", swarm)
         self.assertIn("readonly property real enemyDamageMul: (1 + wave * 0.03) * Math.pow(1.015, Math.max(0, wave - 15))", swarm)
         self.assertIn('mode === "wavecomplete"', swarm)
         self.assertNotIn("Math.min(4, ringLevel", swarm)
@@ -574,7 +575,8 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("mines = []\n        bolts = []\n        rings = []\n        chains = []", swarm)
         # Enemy density should actually escalate with wave: batched spawns + faster cooldown floor.
         self.assertIn("function spawnBatchSize()", swarm)
-        self.assertIn("Math.min(5, 1 + Math.floor(wave / 7))", swarm)
+        self.assertIn("Math.min(7, 1 + Math.floor(wave / 6))", swarm)
+        self.assertIn("spawnCooldown = Math.max(0.08, 0.85 - wave * 0.035)", swarm)
         # Mini-boss reuses the elite warning/spawn cycle.
         self.assertIn('type === "boss"', swarm)
         self.assertIn("enemyProfile(type)", swarm)
@@ -632,7 +634,8 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("function bossTypePool()", swarm)
         self.assertIn('return ["boss", "boss-swift", "boss-tank"]', swarm)
         self.assertIn("function wantsBossSpawn()", swarm)
-        self.assertIn("var bonusChance = wave >= 20 ? Math.min(0.35, (wave - 20) * 0.01) : 0", swarm)
+        self.assertIn("var bonusChance = wave >= 16 ? Math.min(0.45, (wave - 16) * 0.012) : 0", swarm)
+        self.assertIn("eliteCooldown = Math.max(11, 36 - wave * 0.7)", swarm)
 
         # Movement-speed catalyst bumped from 12% to 15% per level so it reads against enemy speed scaling.
         self.assertIn("readonly property real moveSpeed: 190 * (1 + speedBonus * 0.15)", swarm)
@@ -788,8 +791,19 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("function updateCamera(dt)", swarm)
         self.assertIn("cameraX = Math.max(viewportWidth / 2, Math.min(worldWidth - viewportWidth / 2, playerX))", swarm)
         # Enemies spawn relative to the player's viewport, not the (much larger) world edges.
-        self.assertIn("function edgeSpawnPoint()", swarm)
+        self.assertIn("function edgeSpawnPoint(ignoreLane)", swarm)
         self.assertIn("var halfW = viewportWidth / 2 + margin", swarm)
+        # Rotating "open lane" carved out of the regular spawn ring so enemies never fully
+        # encircle the player -- per playtest feedback that later waves left nowhere to run.
+        # Elite/boss warnings pass ignoreLane=true so they still keep pressure up anywhere.
+        self.assertIn("readonly property real openLaneWidth: Math.PI * 0.55", swarm)
+        self.assertIn("property real openLaneAngle: 0", swarm)
+        self.assertIn("property real openLaneTimer: 4.5", swarm)
+        self.assertIn("function updateOpenLane(dt)", swarm)
+        self.assertIn("openLaneAngle = Math.random() * Math.PI * 2", swarm)
+        self.assertIn("function laneAngleGap(a, b)", swarm)
+        self.assertIn("while (!ignoreLane && tries < 8 && laneAngleGap(angle, openLaneAngle) < laneHalf)", swarm)
+        self.assertIn("eliteWarningPos = edgeSpawnPoint(true)", swarm)
         # Perf fix: redrawing the background (gradient, stars, grid) from scratch every time
         # the camera moved made the whole viewport "dirty" every frame regardless of how cheap
         # the individual draw calls were -- culling/caching/threading that redraw all failed to
