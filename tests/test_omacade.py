@@ -661,7 +661,7 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn('id === "unlock-drone"', swarm)
         self.assertIn('id === "drone-up"', swarm)
         self.assertIn("readonly property int droneMaxLevel: 8", swarm)
-        self.assertIn("readonly property int droneCount: Math.min(droneEvolved ? 4 : 3, 1 + Math.floor(droneLevel / 3))", swarm)
+        self.assertIn("readonly property int droneCount: Math.min(droneEvolved ? 7 : 6, 1 + Math.floor(droneLevel / 3))", swarm)
         self.assertIn("readonly property real droneOrbitRadius: 110", swarm)
         self.assertIn("readonly property real droneFireInterval: Math.max(0.45, 1.5 - droneLevel * 0.12) * (droneEvolved ? 0.6 : 1)", swarm)
         self.assertIn("readonly property int droneDamage: (2 + Math.floor(droneLevel * 1.4)) + (droneEvolved ? 3 : 0)", swarm)
@@ -681,6 +681,12 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("readonly property real corruptSpreadChance: corruptEvolved ? 1 : Math.min(0.6, 0.15 + corruptLevel * 0.05)", swarm)
         self.assertIn("readonly property int corruptDamage: (1 + Math.floor(corruptLevel * 0.7)) + (corruptEvolved ? 2 : 0)", swarm)
         self.assertIn('id === "evolve-corrupt") { corruptEvolved = true; announceEvolution("BLACKOUT STRAIN") }', swarm)
+        # Requested directly after playtesting: corrupted enemies weren't identifiable at a
+        # glance from the pulsing ring alone, so a duration bar was added above them. Duration
+        # is stashed per-infection (corruptMaxTimer) rather than read live off corruptDuration,
+        # so the bar stays accurate even if the player levels the weapon mid-infection.
+        self.assertIn("e.corruptMaxTimer = corruptDuration", swarm)
+        self.assertIn("var corruptRatio = Math.max(0, Math.min(1, en.corruptTimer / (en.corruptMaxTimer || 1)))", swarm)
 
         # Random mini-boss variety + off-milestone boss chance at high waves.
         self.assertIn("function isBossType(type)", swarm)
@@ -891,7 +897,7 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn('{ id: poiId, type: "lair", x: lp.x, y: lp.y, state: "dormant" }', swarm)
         self.assertIn("if (dist < lairWakeRadius) {", swarm)
         self.assertIn("lairEnemy.lairId = poi.id", swarm)
-        self.assertIn("orbitCooldown: 0, modifier: null, lairId: null, corruptTimer: 0, corruptTick: 0 }", swarm)
+        self.assertIn("orbitCooldown: 0, modifier: null, lairId: null, corruptTimer: 0, corruptTick: 0, corruptMaxTimer: 0 }", swarm)
         self.assertIn("if (e.lairId) resolveLairKill(e)", swarm)
         self.assertIn("function resolveLairKill(e)", swarm)
         # Relay: channel to capture, then fires at nearby enemies like a fixed turret forever.

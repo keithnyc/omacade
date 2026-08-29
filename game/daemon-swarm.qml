@@ -99,7 +99,10 @@ ShellRoot {
       readonly property int missileCount: Math.min(5, 1 + Math.floor(missileLevel / 2))
       // Mobile, ranged, autonomous -- unlike Auto-Turret (stationary, has HP, expires) or
       // Patch Orbit (melee contact only), Sentinel Drone just follows the player and snipes.
-      readonly property int droneCount: Math.min(droneEvolved ? 4 : 3, 1 + Math.floor(droneLevel / 3))
+      // Base cap sits at 6 (reached around level 16, well past droneMaxLevel) -- an "-up" pick
+      // keeps growing the swarm for a player who commits to the build, same as every other
+      // weapon's late-game overflow growth. Evolution adds one more slot on top.
+      readonly property int droneCount: Math.min(droneEvolved ? 7 : 6, 1 + Math.floor(droneLevel / 3))
       readonly property real droneOrbitRadius: 110
       readonly property real droneOrbitSpeed: 1.3
       readonly property real droneRange: 260 + droneLevel * 14
@@ -699,7 +702,7 @@ ShellRoot {
                  speed: profile.speed * enemySpeedMul, radius: profile.radius,
                  damage: Math.max(profile.damage, Math.round(profile.damage * enemyDamageMul)),
                  xp: profile.xp, score: profile.score, colorKey: profile.color, hitFlash: 0,
-                 orbitCooldown: 0, modifier: null, lairId: null, corruptTimer: 0, corruptTick: 0 }
+                 orbitCooldown: 0, modifier: null, lairId: null, corruptTimer: 0, corruptTick: 0, corruptMaxTimer: 0 }
       }
 
       function spawnEnemyAt(type, pos) {
@@ -1250,6 +1253,7 @@ ShellRoot {
 
       function infectEnemy(e) {
         e.corruptTimer = corruptDuration
+        e.corruptMaxTimer = corruptDuration
         e.corruptTick = corruptTickInterval
       }
 
@@ -2438,6 +2442,16 @@ ShellRoot {
                   context.lineWidth = 1.8
                   context.beginPath(); context.arc(en.x, en.y, en.radius + 4, 0, Math.PI * 2); context.stroke()
                   context.globalAlpha = 1
+                  // DoT bar: how much longer the infection lasts, so it's readable at a glance
+                  // instead of just the pulsing ring -- requested directly after playtesting.
+                  var corruptRatio = Math.max(0, Math.min(1, en.corruptTimer / (en.corruptMaxTimer || 1)))
+                  var corruptBarY = en.y - en.radius - 14
+                  context.strokeStyle = theme.muted
+                  context.lineWidth = 2.4
+                  context.beginPath(); context.moveTo(en.x - 7, corruptBarY); context.lineTo(en.x + 7, corruptBarY); context.stroke()
+                  context.strokeStyle = theme.green
+                  context.lineWidth = 2.4
+                  context.beginPath(); context.moveTo(en.x - 7, corruptBarY); context.lineTo(en.x - 7 + 14 * corruptRatio, corruptBarY); context.stroke()
                 }
                 if (en.type === "rootkit" || game.isBossType(en.type)) {
                   context.fillStyle = theme.foreground
