@@ -288,7 +288,22 @@ ShellRoot {
       // Kept short (<=90ms) so it lands as a punch, not a stutter. See the 16ms Timer below,
       // which checks this before calling tick() at all.
       property real hitStopTimer: 0
+      // Gates the shake+freeze-frame duo specifically -- at wave 30+ with a big kill chain,
+      // firing those back-to-back on every rootkit kill and every 10th streak stack reads as
+      // stutter/CPU spikes rather than juice. Particles/pops/flashes stay ungated (cheap,
+      // continuous, never read as lag); only the two "did the game just hitch" effects wait
+      // out a short cooldown between each other. See triggerImpact() below.
+      property real fxCooldown: 0
+      readonly property real fxCooldownTime: 0.45
       property var dashTrail: []
+      // Dedicated flashy banner for streak milestones -- statusMessage's small HUD line wasn't
+      // visible enough to register as an event, so this is its own big center-lower popup.
+      property real streakBannerLife: 0
+      readonly property real streakBannerMaxLife: 1.0
+      property string streakBannerText: ""
+      // Set alongside `invulnerable` any time it's (re)armed, so the HUD ring around the player
+      // can show a depleting ratio instead of just a binary blink.
+      property real invulnerableMax: 0
       property real lastTickMs: Date.now()
       property int enemySerial: 0
       readonly property int maxParticles: 200
@@ -482,6 +497,16 @@ ShellRoot {
         hitStopTimer = Math.max(hitStopTimer, time)
       }
 
+      // The gated entry point for "big" feedback -- shake plus a freeze-frame. Silently no-ops
+      // while fxCooldown is still counting down from the last one, so a fast kill chain can't
+      // chain these into something that reads as a stutter.
+      function triggerImpact(shakeMagVal, shakeTimeVal, hitStopVal) {
+        if (fxCooldown > 0) return
+        spawnShake(shakeMagVal, shakeTimeVal)
+        triggerHitStop(hitStopVal)
+        fxCooldown = fxCooldownTime
+      }
+
       function resetRun() {
         playerX = worldWidth / 2
         playerY = worldHeight / 2
@@ -585,6 +610,10 @@ ShellRoot {
         shakeTime = 0
         shakeMag = 0
         hitStopTimer = 0
+        fxCooldown = 0
+        streakBannerLife = 0
+        streakBannerText = ""
+        invulnerableMax = 0
         dashTrail = []
         leftHeld = rightHeld = upHeld = downHeld = false
         statusMessage = "DAEMON ONLINE"
@@ -1548,14 +1577,17 @@ ShellRoot {
           // Streak milestones get their own dedicated punch on top of the per-kill juice --
           // every 10th kill in a chain is the moment a stacked combo build is supposed to feel
           // amazing, so it gets a banner, a burst, and a tiny freeze-frame instead of just
-          // ticking the counter quietly.
+          // ticking the counter quietly. Banner/burst/pop always fire (cheap, and the whole
+          // point is the player sees it); shake+freeze-frame go through triggerImpact so a
+          // fast chain of milestones can't stack those into a stutter.
           if (comboCount % 10 === 0) {
             statusMessage = "STREAK x" + comboCount + "!!"
+            streakBannerText = "STREAK x" + comboCount + "!"
+            streakBannerLife = streakBannerMaxLife
             spawnBurst(playerX, playerY, "yellow", 34, 260, 0.6)
             spawnBurst(playerX, playerY, "foreground", 10, 300, 0.4)
             spawnPop(playerX, playerY, "yellow", 100, 0.45)
-            spawnShake(6, 0.22)
-            triggerHitStop(0.05)
+            triggerImpact(6, 0.22, 0.05)
           }
         }
         if (siphonLevel > 0 && hp < maxHp && Math.random() < siphonChance) {
@@ -1569,8 +1601,7 @@ ShellRoot {
           spawnPop(e.x, e.y, e.colorKey, 90, 0.55)
           spawnPop(e.x, e.y, "foreground", 60, 0.35)
           killFlash = 0.22
-          spawnShake(7, 0.22)
-          triggerHitStop(0.06)
+          triggerImpact(7, 0.22, 0.06)
         } else {
           spawnBurst(e.x, e.y, e.colorKey, 16, 220, 0.45)
           spawnBurst(e.x, e.y, "foreground", 4, 260, 0.25)
@@ -1585,6 +1616,7 @@ ShellRoot {
         if (armorLevel > 0) amount = Math.max(1, Math.round(amount * (1 - armorReduction)))
         hp -= amount
         invulnerable = 0.9 + Math.min(shieldBonus, 8) * 0.15
+        invulnerableMax = invulnerable
         damageFlash = 0.4
         spawnShake(9, 0.26)
         shell.play(hurtSound)
@@ -1595,6 +1627,7 @@ ShellRoot {
             failoverCharges -= 1
             hp = Math.max(1, Math.ceil(maxHp / 2))
             invulnerable = 2.2
+            invulnerableMax = 2.2
             statusMessage = "FAILOVER TRIGGERED // INTEGRITY RESTORED"
             spawnBurst(playerX, playerY, "accent", 40, 260, 0.7)
             spawnPop(playerX, playerY, "accent", 110, 0.5)
@@ -1907,7 +1940,7 @@ ShellRoot {
         spawnPop(playerX, playerY, "accent", 110, 0.55)
         spawnPop(playerX, playerY, "yellow", 75, 0.4)
         killFlash = Math.max(killFlash, 0.14)
-        triggerHitStop(0.04)
+        triggerImpact(3, 0.12, 0.04)
       }
 
       function announceEvolution(name) {
@@ -1916,9 +1949,8 @@ ShellRoot {
         spawnBurst(playerX, playerY, "yellow", 30, 320, 0.6)
         spawnPop(playerX, playerY, "accent", 160, 0.6)
         spawnPop(playerX, playerY, "yellow", 110, 0.45)
-        spawnShake(9, 0.35)
         killFlash = Math.max(killFlash, 0.3)
-        triggerHitStop(0.09)
+        triggerImpact(9, 0.35, 0.09)
         shell.play(levelSound)
       }
 
@@ -1996,6 +2028,7 @@ ShellRoot {
         } else if (pick === "shield") {
           var shieldDuration = 10 + Math.random() * 10
           invulnerable = Math.max(invulnerable, shieldDuration)
+          invulnerableMax = Math.max(invulnerableMax, shieldDuration)
           waveReward = "EMERGENCY SHIELD // " + Math.round(shieldDuration) + "S INVULNERABLE"
         } else {
           var bonus2 = 100 + wave * 15
@@ -2158,6 +2191,8 @@ ShellRoot {
         invulnerable = Math.max(0, invulnerable - dt)
         shakeTime = Math.max(0, shakeTime - dt)
         if (shakeTime <= 0) shakeMag = 0
+        fxCooldown = Math.max(0, fxCooldown - dt)
+        streakBannerLife = Math.max(0, streakBannerLife - dt)
         updateParticles(dt)
         updatePops(dt)
         updateChains(dt)
@@ -2942,7 +2977,12 @@ ShellRoot {
               for (var dni = 0; dni < game.damageNumbers.length; dni++) {
                 var dn = game.damageNumbers[dni]
                 context.globalAlpha = Math.max(0, dn.life / dn.maxLife)
-                context.font = dn.crit ? "bold 16px monospace" : "bold 11px monospace"
+                // Quick pop-in scale for the first ~80ms of a number's life -- oversized then
+                // settling to normal size, instead of just fading/floating from the start.
+                var dnAge = dn.maxLife - dn.life
+                var dnScale = dnAge < 0.08 ? 1 + (0.08 - dnAge) / 0.08 * 0.7 : 1
+                var dnBaseSize = dn.crit ? 16 : 11
+                context.font = "bold " + Math.round(dnBaseSize * dnScale) + "px monospace"
                 context.fillStyle = dn.crit ? theme.yellow : theme.orange
                 context.fillText(dn.value + (dn.crit ? "!" : ""), dn.x, dn.y)
               }
@@ -3016,6 +3056,41 @@ ShellRoot {
                 context.restore()
               }
 
+              // Invulnerability timer ring -- depletes as a sweeping arc instead of the old
+              // binary blink alone, so the player can actually judge how long they have left
+              // (e.g. after a shield wave-reward runs 10-20s, way longer than the eye can time).
+              if (game.invulnerable > 0 && game.invulnerableMax > 0) {
+                var invulRatio = game.invulnerable / game.invulnerableMax
+                context.save()
+                context.translate(game.playerX, game.playerY)
+                context.globalAlpha = 0.85
+                context.strokeStyle = theme.accent
+                context.lineWidth = 3
+                context.beginPath()
+                context.arc(0, 0, game.playerRadius + 10, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * invulRatio)
+                context.stroke()
+                context.globalAlpha = 1
+                context.restore()
+              }
+
+              // Combo streak aura -- a pulsing ring that grows brighter/thicker as the streak
+              // builds toward its cap, then flips to red once maxed. Continuous feedback that a
+              // stacked combo build is live, on top of the one-shot milestone banner/burst.
+              if (game.comboLevel > 0 && game.comboCount > 0) {
+                var auraRatio = Math.min(1, game.comboCount / game.comboCap)
+                var auraCol = game.comboCount >= game.comboCap ? theme.red : theme.yellow
+                var auraPulse = 2 * Math.sin(game.animationTime * 8)
+                context.save()
+                context.globalAlpha = 0.16 + 0.22 * auraRatio
+                context.strokeStyle = auraCol
+                context.lineWidth = 2 + auraRatio * 3
+                context.beginPath()
+                context.arc(game.playerX, game.playerY, game.playerRadius + 17 + auraPulse, 0, Math.PI * 2)
+                context.stroke()
+                context.globalAlpha = 1
+                context.restore()
+              }
+
               // Off-screen POI indicators -- the world is much bigger than the viewport now,
               // so unresolved points of interest need a way to be findable. Cancel out the
               // camera translate to work in plain viewport-local coordinates (0..viewportWidth).
@@ -3068,6 +3143,45 @@ ShellRoot {
                 context.strokeRect(13, 13, width - 26, height - 26)
                 context.globalAlpha = 1
               }
+            }
+          }
+
+          // Streak milestone banner -- flashy, center-lower, pops in and holds before fading.
+          // Deliberately a QML Item over the Canvas world (not drawn per-frame in onPaint) so
+          // the pop/fade animation is just property bindings driven off streakBannerLife, no
+          // extra draw-call cost on the already-loaded Canvas thread.
+          Item {
+            id: streakBanner
+            visible: game.streakBannerLife > 0
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: parent.height * 0.22
+            readonly property real elapsed: game.streakBannerMaxLife - game.streakBannerLife
+            readonly property real popScale: 1 + 0.55 * Math.max(0, 1 - elapsed / 0.15)
+            scale: popScale
+            opacity: game.streakBannerLife <= 0 ? 0 : Math.min(1, game.streakBannerLife / 0.3)
+            width: streakBannerLabel.implicitWidth + 48
+            height: streakBannerLabel.implicitHeight + 22
+
+            Rectangle {
+              anchors.fill: parent
+              radius: height / 2
+              color: theme.surfaceRaised
+              opacity: 0.88
+              border.color: theme.yellow
+              border.width: 2
+            }
+            Text {
+              id: streakBannerLabel
+              anchors.centerIn: parent
+              text: game.streakBannerText
+              color: theme.yellow
+              font.pixelSize: 32
+              font.bold: true
+              font.family: "monospace"
+              font.letterSpacing: 2
+              style: Text.Outline
+              styleColor: theme.background
             }
           }
 

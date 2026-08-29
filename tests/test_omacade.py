@@ -608,16 +608,44 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("game.hitStopTimer = Math.max(0, game.hitStopTimer - dt)", swarm)
         self.assertIn('if (comboCount % 10 === 0) {', swarm)
         self.assertIn('statusMessage = "STREAK x" + comboCount + "!!"', swarm)
-        self.assertIn("triggerHitStop(0.05)", swarm)
-        self.assertIn("triggerHitStop(0.06)", swarm)
-        self.assertIn("triggerHitStop(0.04)", swarm)
-        self.assertIn("triggerHitStop(0.09)", swarm)
         self.assertIn("property var dashTrail: []", swarm)
         self.assertIn("function updateDashTrail(dt)", swarm)
         self.assertIn("trail.push({ x: playerX, y: playerY, life: 0.22, maxLife: 0.22 })", swarm)
         self.assertIn("updateDashTrail(dt)", swarm)
         self.assertIn("if (game.hp === 1 && game.mode === \"playing\") {", swarm)
         self.assertIn("context.strokeRect(13, 13, width - 26, height - 26)", swarm)
+
+        # Follow-up juice pass after playtesting: the shake+freeze-frame duo now shares a
+        # cooldown (triggerImpact) so a fast kill chain at high waves can't fire them back to
+        # back and read as an fps stutter; the streak banner got its own flashy popup instead
+        # of the tiny status line; invulnerability and combo streak got depleting/pulsing rings
+        # around the player; damage numbers get a quick pop-in scale.
+        self.assertIn("property real fxCooldown: 0", swarm)
+        self.assertIn("readonly property real fxCooldownTime: 0.45", swarm)
+        self.assertIn("function triggerImpact(shakeMagVal, shakeTimeVal, hitStopVal)", swarm)
+        self.assertIn("if (fxCooldown > 0) return", swarm)
+        self.assertIn("fxCooldown = fxCooldownTime", swarm)
+        self.assertIn("triggerImpact(6, 0.22, 0.05)", swarm)
+        self.assertIn("triggerImpact(7, 0.22, 0.06)", swarm)
+        self.assertIn("triggerImpact(3, 0.12, 0.04)", swarm)
+        self.assertIn("triggerImpact(9, 0.35, 0.09)", swarm)
+        self.assertIn("property real streakBannerLife: 0", swarm)
+        self.assertIn("readonly property real streakBannerMaxLife: 1.0", swarm)
+        self.assertIn("property string streakBannerText: \"\"", swarm)
+        self.assertIn('streakBannerText = "STREAK x" + comboCount + "!"', swarm)
+        self.assertIn("streakBannerLife = streakBannerMaxLife", swarm)
+        self.assertIn("id: streakBanner", swarm)
+        self.assertIn("visible: game.streakBannerLife > 0", swarm)
+        self.assertIn("property real invulnerableMax: 0", swarm)
+        self.assertIn("invulnerableMax = invulnerable", swarm)
+        self.assertIn("invulnerableMax = 2.2", swarm)
+        self.assertIn("invulnerableMax = Math.max(invulnerableMax, shieldDuration)", swarm)
+        self.assertIn("if (game.invulnerable > 0 && game.invulnerableMax > 0) {", swarm)
+        self.assertIn("var invulRatio = game.invulnerable / game.invulnerableMax", swarm)
+        self.assertIn("if (game.comboLevel > 0 && game.comboCount > 0) {", swarm)
+        self.assertIn("var auraCol = game.comboCount >= game.comboCap ? theme.red : theme.yellow", swarm)
+        self.assertIn("var dnAge = dn.maxLife - dn.life", swarm)
+        self.assertIn("var dnScale = dnAge < 0.08 ? 1 + (0.08 - dnAge) / 0.08 * 0.7 : 1", swarm)
 
         # Elite modifiers: shielded/fast/volatile rolled on rootkit/boss spawns only.
         self.assertIn("function spawnElite(type, pos)", swarm)
