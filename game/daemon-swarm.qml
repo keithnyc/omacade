@@ -68,16 +68,21 @@ ShellRoot {
       readonly property int orbitDamage: 1 + orbitLevel + (orbitEvolved ? 2 : 0)
       readonly property int orbitShardCap: 10
       readonly property int orbitShardCount: Math.min(orbitLevel, orbitShardCap)
-      // Pulled back again after live-measuring wave 35+ with a stacked build (8+ active
+      // Pulled back again after live-measuring wave 30+ with a stacked build (8+ active
       // weapons): the Canvas rasterization thread was pinned at 75-85% of a single core while
       // the actual game-logic thread sat around 35% -- this is a draw-call volume problem, not
       // a logic-cost problem. See enemyGlowThreshold below for the render-side half of the fix.
-      readonly property int maxEnemies: Math.min(200, 90 + wave * 6)
+      // Cut further still after wave 30+ remained rough with 200 concurrent enemies -- the cap
+      // is what bounds worst-case draw calls, so this is the highest-leverage single knob.
+      // HP/damage below carry correspondingly more of the difficulty curve.
+      readonly property int maxEnemies: Math.min(150, 75 + wave * 5)
       // Above this many concurrent enemies, skip the purely-decorative ambient glow underlay
       // each enemy draws (2+ extra canvas calls apiece) -- invisible in practice once the
       // screen is already this dense, but it's the single biggest per-enemy draw-call cut
-      // available without touching body shapes or status indicators players rely on.
-      readonly property int enemyGlowThreshold: 120
+      // available without touching body shapes or status indicators players rely on. Scaled
+      // down proportionally with maxEnemies so it still only bites once things are genuinely
+      // crowded (same ~60% of cap ratio as before).
+      readonly property int enemyGlowThreshold: 90
       // Width of the rotating gap in the regular spawn ring -- see edgeSpawnPoint().
       readonly property real openLaneWidth: Math.PI * 0.55
       // These are evolution-readiness thresholds, not hard caps -- every "-up" upgrade
@@ -163,11 +168,12 @@ ShellRoot {
       // player's base move speed (190). Difficulty instead comes from HP, elite pressure, and
       // sheer volume below, so standing still isn't the only viable strategy late-game.
       readonly property real enemySpeedMul: 1 + Math.min(0.6, wave * 0.025)
-      // HP/damage carry more of the late-game load than before -- maxEnemies below got pulled
-      // back down after wave 35+ started tanking framerate with 320 concurrent enemies each
-      // getting O(n) hit-scanned by every active weapon. Fewer, tougher enemies instead.
-      readonly property real enemyHpMul: (1 + wave * 0.16) * waveHardening
-      readonly property real enemyDamageMul: (1 + wave * 0.035) * Math.pow(1.02, Math.max(0, wave - 15))
+      // HP/damage carry more of the late-game load than before -- maxEnemies above keeps
+      // getting pulled back down as framerate problems surface at higher waves (320, then
+      // 200, now 150 concurrent enemies), each getting O(n) hit-scanned by every active
+      // weapon. Fewer, tougher enemies instead. Bumped again alongside the latest cut.
+      readonly property real enemyHpMul: (1 + wave * 0.19) * waveHardening
+      readonly property real enemyDamageMul: (1 + wave * 0.045) * Math.pow(1.02, Math.max(0, wave - 15))
       // Evil Otto (Berzerk homage): a relentless single pursuer that shows up after the player
       // holds still too long, punishing turtling rather than randomly threatening the player.
       // Tracks literal stillness (no movement input held), not kills or wave duration -- weapons
@@ -277,6 +283,12 @@ ShellRoot {
       property real killFlash: 0
       property real shakeTime: 0
       property real shakeMag: 0
+      // Freeze-frame juice -- a brief full pause on the biggest moments (evolutions, boss/otto
+      // kills, streak milestones) reads as far more impactful than any amount of extra particles.
+      // Kept short (<=90ms) so it lands as a punch, not a stutter. See the 16ms Timer below,
+      // which checks this before calling tick() at all.
+      property real hitStopTimer: 0
+      property var dashTrail: []
       property real lastTickMs: Date.now()
       property int enemySerial: 0
       readonly property int maxParticles: 200
@@ -466,6 +478,10 @@ ShellRoot {
         shakeTime = Math.max(shakeTime, time)
       }
 
+      function triggerHitStop(time) {
+        hitStopTimer = Math.max(hitStopTimer, time)
+      }
+
       function resetRun() {
         playerX = worldWidth / 2
         playerY = worldHeight / 2
@@ -568,6 +584,8 @@ ShellRoot {
         killFlash = 0
         shakeTime = 0
         shakeMag = 0
+        hitStopTimer = 0
+        dashTrail = []
         leftHeld = rightHeld = upHeld = downHeld = false
         statusMessage = "DAEMON ONLINE"
       }
@@ -821,6 +839,16 @@ ShellRoot {
                        value: Math.round(amount), life: 0.6, maxLife: 0.6, crit: crit })
         if (updated.length > maxDamageNumbers) updated = updated.slice(updated.length - maxDamageNumbers)
         damageNumbers = updated
+      }
+
+      function updateDashTrail(dt) {
+        var active = []
+        for (var i = 0; i < dashTrail.length; i++) {
+          var ghost = dashTrail[i]
+          ghost.life -= dt
+          if (ghost.life > 0) active.push(ghost)
+        }
+        dashTrail = active
       }
 
       function updateDamageNumbers(dt) {
@@ -1454,6 +1482,10 @@ ShellRoot {
           dashTimer = Math.max(0, dashTimer - dt)
           playerX = Math.max(playerRadius, Math.min(worldWidth - playerRadius, playerX + lastMoveDirX * moveSpeed * dashSpeedMul * dt))
           playerY = Math.max(playerRadius, Math.min(worldHeight - playerRadius, playerY + lastMoveDirY * moveSpeed * dashSpeedMul * dt))
+          var trail = dashTrail.slice(0)
+          trail.push({ x: playerX, y: playerY, life: 0.22, maxLife: 0.22 })
+          if (trail.length > 8) trail = trail.slice(trail.length - 8)
+          dashTrail = trail
           return
         }
         var dx = (rightHeld ? 1 : 0) - (leftHeld ? 1 : 0)
@@ -1510,7 +1542,22 @@ ShellRoot {
       function killRewards(e) {
         score += e.score
         dropLoot(e)
-        if (comboLevel > 0) { comboCount += 1; comboTimer = comboWindow }
+        if (comboLevel > 0) {
+          comboCount += 1
+          comboTimer = comboWindow
+          // Streak milestones get their own dedicated punch on top of the per-kill juice --
+          // every 10th kill in a chain is the moment a stacked combo build is supposed to feel
+          // amazing, so it gets a banner, a burst, and a tiny freeze-frame instead of just
+          // ticking the counter quietly.
+          if (comboCount % 10 === 0) {
+            statusMessage = "STREAK x" + comboCount + "!!"
+            spawnBurst(playerX, playerY, "yellow", 34, 260, 0.6)
+            spawnBurst(playerX, playerY, "foreground", 10, 300, 0.4)
+            spawnPop(playerX, playerY, "yellow", 100, 0.45)
+            spawnShake(6, 0.22)
+            triggerHitStop(0.05)
+          }
+        }
         if (siphonLevel > 0 && hp < maxHp && Math.random() < siphonChance) {
           hp += 1
           spawnPop(playerX, playerY, "green", 24, 0.3)
@@ -1523,6 +1570,7 @@ ShellRoot {
           spawnPop(e.x, e.y, "foreground", 60, 0.35)
           killFlash = 0.22
           spawnShake(7, 0.22)
+          triggerHitStop(0.06)
         } else {
           spawnBurst(e.x, e.y, e.colorKey, 16, 220, 0.45)
           spawnBurst(e.x, e.y, "foreground", 4, 260, 0.25)
@@ -1859,6 +1907,7 @@ ShellRoot {
         spawnPop(playerX, playerY, "accent", 110, 0.55)
         spawnPop(playerX, playerY, "yellow", 75, 0.4)
         killFlash = Math.max(killFlash, 0.14)
+        triggerHitStop(0.04)
       }
 
       function announceEvolution(name) {
@@ -1869,6 +1918,7 @@ ShellRoot {
         spawnPop(playerX, playerY, "yellow", 110, 0.45)
         spawnShake(9, 0.35)
         killFlash = Math.max(killFlash, 0.3)
+        triggerHitStop(0.09)
         shell.play(levelSound)
       }
 
@@ -1976,8 +2026,12 @@ ShellRoot {
         rollWaveReward()
       }
 
+      // Smaller batches than before (was up to 5) -- with the lower maxEnemies cap, big
+      // simultaneous batches were the difference between "steady trickle" and "everything
+      // pops in at once, then a dead gap." Slots reopen and get refilled continuously as
+      // enemies die, so the population still flows toward the cap -- it just arrives smoother.
       function spawnBatchSize() {
-        return Math.min(5, 1 + Math.floor(wave / 7))
+        return Math.min(3, 1 + Math.floor(wave / 10))
       }
 
       function updateOpenLane(dt) {
@@ -2108,6 +2162,7 @@ ShellRoot {
         updatePops(dt)
         updateChains(dt)
         updateDamageNumbers(dt)
+        updateDashTrail(dt)
         if (mode !== "playing") return
         elapsed += dt
         if (comboCount > 0) {
@@ -2227,6 +2282,11 @@ ShellRoot {
           var now = Date.now()
           var dt = Math.max(0.001, Math.min(0.05, (now - game.lastTickMs) / 1000))
           game.lastTickMs = now
+          if (game.hitStopTimer > 0) {
+            game.hitStopTimer = Math.max(0, game.hitStopTimer - dt)
+            worldCanvas.requestPaint()
+            return
+          }
           game.tick(dt)
           if (game.mode === "wavecomplete") {
             game.waveTransitionLife = Math.max(0, game.waveTransitionLife - dt)
@@ -2915,6 +2975,14 @@ ShellRoot {
               }
               context.globalAlpha = 1
 
+              for (var gi = 0; gi < game.dashTrail.length; gi++) {
+                var ghost = game.dashTrail[gi]
+                context.globalAlpha = 0.24 * Math.max(0, ghost.life / ghost.maxLife)
+                context.fillStyle = theme.accent
+                context.beginPath(); context.arc(ghost.x, ghost.y, game.playerRadius, 0, Math.PI * 2); context.fill()
+              }
+              context.globalAlpha = 1
+
               var blink = game.invulnerable > 0 && Math.floor(game.animationTime * 14) % 2 === 0
               if (!blink) {
                 var pulse = 3 * Math.sin(game.animationTime * 5)
@@ -2991,6 +3059,13 @@ ShellRoot {
                 context.globalAlpha = Math.min(0.24, game.killFlash)
                 context.fillStyle = theme.accent
                 context.fillRect(0, 0, width, height)
+                context.globalAlpha = 1
+              }
+              if (game.hp === 1 && game.mode === "playing") {
+                context.globalAlpha = 0.16 + 0.12 * Math.sin(game.animationTime * 7)
+                context.strokeStyle = theme.red
+                context.lineWidth = 26
+                context.strokeRect(13, 13, width - 26, height - 26)
                 context.globalAlpha = 1
               }
             }

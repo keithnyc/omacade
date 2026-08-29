@@ -553,12 +553,12 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("function rollUpgrades()", swarm)
         self.assertIn('type === "rootkit"', swarm)
         self.assertIn('if (e.type === "fork")', swarm)
-        self.assertIn("readonly property int maxEnemies: Math.min(200, 90 + wave * 6)", swarm)
+        self.assertIn("readonly property int maxEnemies: Math.min(150, 75 + wave * 5)", swarm)
         # Live-measured with top -H: the Canvas rasterization thread was pinned at 75-85% of a
-        # single core at wave 35+ with a stacked build, while the JS logic thread sat ~35% --
+        # single core at wave 30+ with a stacked build, while the JS logic thread sat ~35% --
         # a draw-call volume problem. maxEnemies pulled back further, and past a density
         # threshold the purely-decorative per-enemy glow underlay is skipped entirely.
-        self.assertIn("readonly property int enemyGlowThreshold: 120", swarm)
+        self.assertIn("readonly property int enemyGlowThreshold: 90", swarm)
         self.assertIn("var showEnemyGlow = game.enemies.length < game.enemyGlowThreshold", swarm)
         self.assertIn("if (showEnemyGlow) {", swarm)
         self.assertIn('difficulty: "swarm"', swarm)
@@ -569,8 +569,8 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("readonly property int waveKillTarget: 8 + wave * 5", swarm)
         self.assertIn("readonly property real waveHardening: Math.pow(1.05, Math.max(0, wave - 15))", swarm)
         self.assertIn("readonly property real enemySpeedMul: 1 + Math.min(0.6, wave * 0.025)", swarm)
-        self.assertIn("readonly property real enemyHpMul: (1 + wave * 0.16) * waveHardening", swarm)
-        self.assertIn("readonly property real enemyDamageMul: (1 + wave * 0.035) * Math.pow(1.02, Math.max(0, wave - 15))", swarm)
+        self.assertIn("readonly property real enemyHpMul: (1 + wave * 0.19) * waveHardening", swarm)
+        self.assertIn("readonly property real enemyDamageMul: (1 + wave * 0.045) * Math.pow(1.02, Math.max(0, wave - 15))", swarm)
         self.assertIn('mode === "wavecomplete"', swarm)
         self.assertNotIn("Math.min(4, ringLevel", swarm)
         self.assertNotIn("Math.min(5, burstLevel", swarm)
@@ -585,7 +585,7 @@ class OmacadeTests(unittest.TestCase):
         # enemies each getting O(n) hit-scanned by every active weapon -- HP/damage carry more
         # of the late-game difficulty now instead (see enemyHpMul/enemyDamageMul above).
         self.assertIn("function spawnBatchSize()", swarm)
-        self.assertIn("Math.min(5, 1 + Math.floor(wave / 7))", swarm)
+        self.assertIn("Math.min(3, 1 + Math.floor(wave / 10))", swarm)
         self.assertIn("spawnCooldown = Math.max(0.1, 0.85 - wave * 0.03)", swarm)
         # Mini-boss reuses the elite warning/spawn cycle.
         self.assertIn('type === "boss"', swarm)
@@ -598,6 +598,26 @@ class OmacadeTests(unittest.TestCase):
         ):
             self.assertIn(f'id === "{upgrade_id}"', swarm)
         self.assertIn("function rollDamage(base)", swarm)
+
+        # Juice pass: freeze-frame on big moments, escalating streak milestones, a dash
+        # after-image trail, and a low-HP tension vignette.
+        self.assertIn("property real hitStopTimer: 0", swarm)
+        self.assertIn("function triggerHitStop(time)", swarm)
+        self.assertIn("hitStopTimer = Math.max(hitStopTimer, time)", swarm)
+        self.assertIn("if (game.hitStopTimer > 0) {", swarm)
+        self.assertIn("game.hitStopTimer = Math.max(0, game.hitStopTimer - dt)", swarm)
+        self.assertIn('if (comboCount % 10 === 0) {', swarm)
+        self.assertIn('statusMessage = "STREAK x" + comboCount + "!!"', swarm)
+        self.assertIn("triggerHitStop(0.05)", swarm)
+        self.assertIn("triggerHitStop(0.06)", swarm)
+        self.assertIn("triggerHitStop(0.04)", swarm)
+        self.assertIn("triggerHitStop(0.09)", swarm)
+        self.assertIn("property var dashTrail: []", swarm)
+        self.assertIn("function updateDashTrail(dt)", swarm)
+        self.assertIn("trail.push({ x: playerX, y: playerY, life: 0.22, maxLife: 0.22 })", swarm)
+        self.assertIn("updateDashTrail(dt)", swarm)
+        self.assertIn("if (game.hp === 1 && game.mode === \"playing\") {", swarm)
+        self.assertIn("context.strokeRect(13, 13, width - 26, height - 26)", swarm)
 
         # Elite modifiers: shielded/fast/volatile rolled on rootkit/boss spawns only.
         self.assertIn("function spawnElite(type, pos)", swarm)
@@ -999,7 +1019,7 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("readonly property real comboWindow: 1.5", swarm)
         self.assertIn("readonly property int comboCap: 10 + comboLevel * 5", swarm)
         self.assertIn("readonly property real comboMultiplier: comboLevel > 0 ? 1 + Math.min(comboCount, comboCap) * comboStep : 1", swarm)
-        self.assertIn("if (comboLevel > 0) { comboCount += 1; comboTimer = comboWindow }", swarm)
+        self.assertIn("comboCount += 1\n          comboTimer = comboWindow", swarm)
         self.assertIn("var scaled = base * comboMultiplier", swarm)
         self.assertIn("var amount = forceCrit ? base * comboMultiplier * 2 : rollDamage(base)", swarm)
         self.assertIn("if (comboTimer <= 0) { comboTimer = 0; comboCount = 0 }", swarm)
