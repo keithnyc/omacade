@@ -2184,6 +2184,13 @@ ShellRoot {
         mode = "scores"
       }
 
+      // Sound is a global config flag shared across every cabinet (see ArcadeData), same as
+      // the hub's toggle -- flipping it here persists for the whole arcade, not just this run.
+      function toggleSound() {
+        arcadeData.patchConfig({ sound: !arcadeData.soundEnabled })
+        if (arcadeData.soundEnabled) shell.play(hitSound)
+      }
+
       function tick(dt) {
         animationTime += dt
         damageFlash = Math.max(0, damageFlash - dt)
@@ -2276,6 +2283,7 @@ ShellRoot {
           }
           if (event.key === Qt.Key_H) openScores()
           else if (event.key === Qt.Key_I && mode === "attract") showInstructions = true
+          else if (event.key === Qt.Key_M) toggleSound()
           else if (shell.circuitMode && mode === "gameover" && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)) window.visible = false
           else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) startRun()
           else if (event.key === Qt.Key_Q || event.key === Qt.Key_Escape) window.visible = false
@@ -2284,6 +2292,7 @@ ShellRoot {
         }
         if (mode === "paused") {
           if (event.key === Qt.Key_P) mode = "playing"
+          else if (event.key === Qt.Key_M) toggleSound()
           event.accepted = true
           return
         }
@@ -2295,6 +2304,7 @@ ShellRoot {
         else if (event.key === Qt.Key_Space) attemptDash()
         else if (event.key === Qt.Key_P) mode = "paused"
         else if (event.key === Qt.Key_H) openScores()
+        else if (event.key === Qt.Key_M) toggleSound()
         else if (event.key === Qt.Key_R) startRun()
         else if (event.key === Qt.Key_Q || event.key === Qt.Key_Escape) window.visible = false
         event.accepted = true
@@ -3261,7 +3271,7 @@ ShellRoot {
                   NumberAnimation { to: 1; duration: 620 }
                 }
               }
-              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "H RECORDS    Q QUIT"; color: theme.muted; font.pixelSize: 10; font.family: "monospace" }
+              Text { anchors.horizontalCenter: parent.horizontalCenter; text: "M SOUND " + (arcadeData.soundEnabled ? "ON" : "OFF") + "    H RECORDS    Q QUIT"; color: theme.muted; font.pixelSize: 10; font.family: "monospace" }
             }
           }
 
@@ -3449,7 +3459,7 @@ ShellRoot {
           border.width: 1
           Text {
             anchors.centerIn: parent
-            text: "← ↑ ↓ → / WASD MOVE    SPACE DASH    AUTO-FIRE    P PAUSE    H RECORDS    Q QUIT"
+            text: "← ↑ ↓ → / WASD MOVE    SPACE DASH    AUTO-FIRE    P PAUSE    H RECORDS    M SOUND " + (arcadeData.soundEnabled ? "ON" : "OFF") + "    Q QUIT"
             color: theme.muted; font.pixelSize: 10; font.family: "monospace"; font.bold: true
           }
         }

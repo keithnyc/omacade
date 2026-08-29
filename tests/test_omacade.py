@@ -647,6 +647,15 @@ class OmacadeTests(unittest.TestCase):
         self.assertIn("var dnAge = dn.maxLife - dn.life", swarm)
         self.assertIn("var dnScale = dnAge < 0.08 ? 1 + (0.08 - dnAge) / 0.08 * 0.7 : 1", swarm)
 
+        # Mute toggle -- shares the same global config flag as the hub and every other
+        # cabinet (ArcadeData.soundEnabled), so it persists arcade-wide, not just this run.
+        self.assertIn("function toggleSound()", swarm)
+        self.assertIn("arcadeData.patchConfig({ sound: !arcadeData.soundEnabled })", swarm)
+        self.assertIn("if (arcadeData.soundEnabled) shell.play(hitSound)", swarm)
+        self.assertIn("else if (event.key === Qt.Key_M) toggleSound()", swarm)
+        self.assertIn('"M SOUND " + (arcadeData.soundEnabled ? "ON" : "OFF") + "    H RECORDS    Q QUIT"', swarm)
+        self.assertIn('H RECORDS    M SOUND " + (arcadeData.soundEnabled ? "ON" : "OFF") + "    Q QUIT"', swarm)
+
         # Elite modifiers: shielded/fast/volatile rolled on rootkit/boss spawns only.
         self.assertIn("function spawnElite(type, pos)", swarm)
         self.assertIn('return ["shielded", "fast", "volatile"]', swarm)
