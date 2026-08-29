@@ -1620,7 +1620,7 @@ ShellRoot {
         if (turretLevel > 0) pool.push({ id: "turret-up", title: "TURRET OVERCLOCK", detail: "Auto-Turret: +damage, +range, faster fire and redeploy." })
         if (boomerangLevel > 0) pool.push({ id: "boomerang-up", title: "PING OVERCLOCK", detail: "Ping Boomerang: +damage, +range, faster throw." })
         if (missileLevel > 0) pool.push({ id: "missile-up", title: "PAYLOAD OVERCLOCK", detail: "Payload Missile: +missile count, +blast radius, +damage." })
-        if (droneLevel > 0) pool.push({ id: "drone-up", title: "SENTINEL OVERCLOCK", detail: "Sentinel Drone: +1 drone (up to 3), +damage, faster fire." })
+        if (droneLevel > 0) pool.push({ id: "drone-up", title: "SENTINEL OVERCLOCK", detail: "Sentinel Drone: +damage, faster fire, +drone every 3 levels (up to 3)." })
         if (corruptLevel > 0) pool.push({ id: "corrupt-up", title: "STRAIN OVERCLOCK", detail: "Corrupt Field: +damage, longer infection, more likely to spread." })
         pool.push({ id: "burst-up", title: "PACKET OVERCLOCK", detail: "Packet Burst: faster fire, +pierce, +damage." })
         if (burstMultiLevel < burstMultiCap) pool.push({ id: "burst-multi-up", title: "PACKET FORK", detail: "Packet Burst: +1 simultaneous target." })
